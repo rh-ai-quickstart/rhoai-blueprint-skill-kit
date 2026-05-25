@@ -10,6 +10,11 @@ source_examples:
     fork_repo: "https://github.com/rh-ai-quickstart/nvidia-video-search-and-summarization"
     notes: "Demonstrates custom SCC for running containers with runAsUser: 0 and NIM model PVCs"
     approach: "A"
+  - blueprint: "generative-virtual-screening"
+    source_repo: "https://github.com/NVIDIA-BioNeMo-blueprints/generative-virtual-screening"
+    fork_repo: "https://github.com/rh-ai-quickstart/generative-virtual-screening"
+    notes: "Custom SCC for BioNeMo NIMs with runAsUser: 0 for MSA init container and SELinux skip for large model PVCs (1.5TB)"
+    approach: "A"
 ---
 
 # Security Context Constraints (SCC) for OpenShift

@@ -1,6 +1,6 @@
 ---
 type: deployment-type
-components: [nim-llm, nemo-embedding, nemo-rerank]
+components: [nim-llm, nemo-embedding, nemo-rerank, nim-bionemo]
 deployment_types: [helm]
 resource_types: [gpu, storage]
 architecture: []
@@ -9,6 +9,11 @@ source_examples:
     source_repo: "https://github.com/NVIDIA-AI-Blueprints/video-search-and-summarization"
     fork_repo: "https://github.com/rh-ai-quickstart/nvidia-video-search-and-summarization"
     notes: "Demonstrates NIM Operator integration for LLM, embedding, and reranking NIMs with OpenShift-specific configuration"
+    approach: "A"
+  - blueprint: "generative-virtual-screening"
+    source_repo: "https://github.com/NVIDIA-BioNeMo-blueprints/generative-virtual-screening"
+    fork_repo: "https://github.com/rh-ai-quickstart/generative-virtual-screening"
+    notes: "Demonstrates NIM Operator integration for BioNeMo NIMs (DiffDock, GenMol, MSA-Search, OpenFold2) with large PVC requirements (1.5TB for MSA databases)"
     approach: "A"
 ---
 
