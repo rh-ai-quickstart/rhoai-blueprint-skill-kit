@@ -8,6 +8,10 @@ source_examples:
     source_repo: "https://github.com/NVIDIA-Omniverse-blueprints/synthetic-manipulation-motion-generation"
     fork_repo: "https://github.com/rh-ai-quickstart/synthetic-manipulation-motion-generation"
     notes: "First RHOAI notebook pattern with Xvfb, GPU, PVC initialization"
+  - blueprint: "generative-protein-binder-design"
+    source_repo: "https://github.com/NVIDIA-BioNeMo-blueprints/generative-protein-binder-design"
+    fork_repo: "https://github.com/rh-ai-quickstart/generative-protein-binder-design"
+    notes: "DEPLOYMENT_MODE environment variable pattern for switching between localhost and Kubernetes DNS names, with connection keepalive thread"
 ---
 
 # RHOAI Notebook Deployment Pattern
@@ -263,11 +267,16 @@ fi
 - Use `$NOTEBOOK_ARGS` (injected by RHOAI) when launching Jupyter Lab
 - Do NOT use `--allow-root` flag (OpenShift runs as non-root)
 
-### 5. Update Notebooks for OPENSHIFT_MODE
+### 5. Update Notebooks for DEPLOYMENT_MODE
 
 **Purpose:** Notebooks may need to adapt behavior based on deployment mode.
 
-**Pattern:**
+**Two common patterns:**
+
+#### Pattern A: OPENSHIFT_MODE (boolean flag)
+
+Used when notebooks need to enable/disable features:
+
 ```python
 import os
 
@@ -298,6 +307,89 @@ config = {}
 if not openshift_mode:
     config["enable"] = "omni.kit.renderer.capture"
 ```
+
+#### Pattern B: DEPLOYMENT_MODE (mode string)
+
+Used when notebooks need to switch service URLs between local and cluster-internal:
+
+```python
+import os
+
+DEPLOYMENT_MODE = os.getenv('DEPLOYMENT_MODE', 'local')
+
+if DEPLOYMENT_MODE == 'openshift':
+    # Cluster-internal K8s DNS names
+    NIM_HOSTS = {
+        'SERVICE1': os.getenv('SERVICE1_HOST', 'http://service1'),
+        'SERVICE2': os.getenv('SERVICE2_HOST', 'http://service2'),
+    }
+    PORTS = {
+        'SERVICE1': 8000,  # All services use 8000 on OpenShift
+        'SERVICE2': 8000,
+    }
+    print("OpenShift/RHOAI Mode - Using Helm-deployed services")
+else:
+    # Localhost URLs for docker-compose
+    NIM_HOSTS = {
+        'SERVICE1': 'http://localhost',
+        'SERVICE2': 'http://localhost',
+    }
+    PORTS = {
+        'SERVICE1': 8081,  # Different ports per service locally
+        'SERVICE2': 8082,
+    }
+    print("Local Mode - Using localhost")
+```
+
+**Example from generative-protein-binder-design:**
+```python
+# RECOMMENDED: Set DEPLOYMENT_MODE=openshift when creating your RHOAI workbench.
+# FALLBACK: Uncomment the line below if you forgot to set it during creation.
+# os.environ['DEPLOYMENT_MODE'] = 'openshift'
+
+DEPLOYMENT_MODE = os.getenv('DEPLOYMENT_MODE', 'local')
+
+if DEPLOYMENT_MODE == 'openshift':
+    # Cluster-internal K8s DNS names. Defaults match NIM Operator service names.
+    # Override with env vars if using standard Helm chart service names.
+    NIM_HOSTS = {
+        'ALPHAFOLD2': os.getenv('ALPHAFOLD2_HOST', 'http://alphafold2'),
+        'RFDIFFUSION': os.getenv('RFDIFFUSION_HOST', 'http://rfdiffusion'),
+        'PROTEINMPNN': os.getenv('PROTEINMPNN_HOST', 'http://proteinmpnn'),
+        'AF2_MULTIMER': os.getenv('AF2_MULTIMER_HOST', 'http://alphafold2-multimer'),
+    }
+    print("OpenShift/RHOAI Mode - Using Helm-deployed NIM services")
+else:
+    NIM_HOSTS = {name: 'http://localhost' for name in ['ALPHAFOLD2', 'RFDIFFUSION', 'PROTEINMPNN', 'AF2_MULTIMER']}
+    print("Local Mode - Using localhost (deploy with docker compose first)")
+
+# Port mapping: localhost uses different ports per service, OpenShift uses 8000 for all
+_OCP_PORT = 8000
+if DEPLOYMENT_MODE == 'openshift':
+    NIM_PORT_TO_BASE_URL = {
+        8081: f"{NIM_HOSTS['ALPHAFOLD2']}:{_OCP_PORT}",
+        8082: f"{NIM_HOSTS['RFDIFFUSION']}:{_OCP_PORT}",
+        8083: f"{NIM_HOSTS['PROTEINMPNN']}:{_OCP_PORT}",
+        8084: f"{NIM_HOSTS['AF2_MULTIMER']}:{_OCP_PORT}",
+    }
+else:
+    NIM_PORT_TO_BASE_URL = {
+        8081: f"{NIM_HOSTS['ALPHAFOLD2']}:8081",
+        8082: f"{NIM_HOSTS['RFDIFFUSION']}:8082",
+        8083: f"{NIM_HOSTS['PROTEINMPNN']}:8083",
+        8084: f"{NIM_HOSTS['AF2_MULTIMER']}:8084",
+    }
+
+print(f"\nService URLs:")
+for name in NIM_HOSTS:
+    port = 8081  # lookup actual port for this service
+    print(f"  {name}: {NIM_PORT_TO_BASE_URL[port]}")
+```
+
+**Key differences between patterns:**
+- **OPENSHIFT_MODE (boolean)**: Use for feature flags (headless mode, GPU rendering, etc.)
+- **DEPLOYMENT_MODE (string)**: Use for URL/service discovery (localhost vs Kubernetes DNS)
+- Both can be used in the same notebook if needed
 
 ### 6. Update README
 
@@ -490,6 +582,31 @@ oc describe imagestream <name> -n redhat-ods-applications
 **Cause:** Files are in ephemeral storage, not PVC.
 
 **Solution:** Ensure notebooks are in `/opt/app-root/src` (which is the PVC mount point).
+
+### Issue: Long-running notebook cells timeout in RHOAI
+
+**Problem:** When running long-running cells (e.g., 20+ minute API calls to NIMs), the RHOAI connection may timeout and show "kernel connection lost" even though the cell is still executing on the backend.
+
+**Solution:** Add a keepalive thread that periodically prints to prevent connection timeout:
+
+**Example from generative-protein-binder-design:**
+```python
+if DEPLOYMENT_MODE == 'openshift':
+    import threading, time as _time
+    def _keepalive():
+        while True:
+            _time.sleep(60)
+            print('.', end='', flush=True)
+    threading.Thread(target=_keepalive, daemon=True).start()
+    print('Keepalive thread started (prints a dot every 60s to prevent connection timeout)')
+```
+
+**Pattern details:**
+- Start a daemon thread that prints `.` every 60 seconds
+- Only enable in OpenShift mode (not needed for local docker-compose)
+- Use `flush=True` to ensure output is sent immediately
+- Daemon thread dies when notebook kernel stops (no cleanup needed)
+- Minimal output keeps connection alive without cluttering cell output
 
 ### Issue: Application writes fail with "permission denied"
 

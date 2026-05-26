@@ -15,6 +15,11 @@ source_examples:
     fork_repo: "https://github.com/rh-ai-quickstart/generative-virtual-screening"
     notes: "Demonstrates NIM Operator integration for BioNeMo NIMs (DiffDock, GenMol, MSA-Search, OpenFold2) with large PVC requirements (1.5TB for MSA databases)"
     approach: "A"
+  - blueprint: "generative-protein-binder-design"
+    source_repo: "https://github.com/NVIDIA-BioNeMo-blueprints/generative-protein-binder-design"
+    fork_repo: "https://github.com/rh-ai-quickstart/generative-protein-binder-design"
+    notes: "Demonstrates NIM Operator integration for multiple BioNeMo NIMs (AlphaFold2, RFDiffusion, ProteinMPNN, AlphaFold2-Multimer) with very large PVCs (up to 2TB) and extended startup probes (up to 6 hours for TensorRT compilation)"
+    approach: "A"
 ---
 
 # NIM Operator Integration Pattern
@@ -266,25 +271,64 @@ oc secrets link nim-cache-sa ngc-docker-reg-secret --for=pull -n $NAMESPACE
 
 ## PVC Sizing Guidance
 
-Based on the video-search-and-summarization blueprint:
+PVC size requirements vary dramatically based on NIM type and model:
 
 | NIM Type | Model | PVC Size | Notes |
 |----------|-------|----------|-------|
 | nim-llm | llama-3.1-8b-instruct | 100 GiB | LLM models require substantial space |
 | nemo-embedding | llama-3.2-nv-embedqa-1b-v2 | 50 GiB | Embedding models are smaller |
 | nemo-rerank | llama-3.2-nv-rerankqa-1b-v2 | 50 GiB | Reranking models are smaller |
+| **BioNeMo NIMs** | | | **Significantly larger than LLM NIMs** |
+| alphafold2 | deepmind/alphafold2 | 2000 GiB (2TB) | Full genomic database (millions of files) |
+| rfdiffusion | ipd/rfdiffusion | 350 GiB | Model + TensorRT compilation cache |
+| proteinmpnn | ipd/proteinmpnn | 100 GiB | Smallest BioNeMo NIM |
+| alphafold2-multimer | deepmind/alphafold2-multimer | 2000 GiB (2TB) | Same database as AlphaFold2 |
 
-**Important:** PVCs created by NIMCache are immutable. To resize, delete the NIMCache and PVC, then re-run `helm install`.
+**Important:** 
+- PVCs created by NIMCache are immutable. To resize, delete the NIMCache and PVC, then re-run `helm install`.
+- BioNeMo NIMs with 2TB PVCs containing millions of files require custom SCC with `seLinuxContext: RunAsAny` to prevent recursive relabeling timeouts (see security-contexts-scc.md).
 
 ## Startup Probe Configuration
 
-NIMs have long startup times due to model downloads. Configure generous startup probes:
+NIMs have long startup times due to model downloads and compilation. Configure generous startup probes:
 
-| NIM Type | Initial Delay | Period | Failure Threshold | Max Wait Time |
-|----------|---------------|--------|-------------------|---------------|
-| nim-llm | 120s | 30s | 240 | ~2 hours |
-| nemo-embedding | 60s | 30s | 120 | ~1 hour |
-| nemo-rerank | 60s | 30s | 120 | ~1 hour |
+| NIM Type | Initial Delay | Period | Failure Threshold | Max Wait Time | Notes |
+|----------|---------------|--------|-------------------|---------------|-------|
+| nim-llm | 120s | 30s | 240 | ~2 hours | Model download time |
+| nemo-embedding | 60s | 30s | 120 | ~1 hour | Model download time |
+| nemo-rerank | 60s | 30s | 120 | ~1 hour | Model download time |
+| **BioNeMo NIMs** | | | | | **Much longer startup times** |
+| alphafold2 | 120s | 30s | 720 | ~6 hours | 2TB database download |
+| rfdiffusion | 120s | 30s | 720 | ~6 hours | TensorRT compilation on first run |
+| proteinmpnn | 120s | 30s | 120 | ~1 hour | Standard model download |
+| alphafold2-multimer | 120s | 30s | 360 | ~3 hours | 2TB database download |
+
+**Critical Gotcha - RFDiffusion TensorRT Compilation:**
+
+RFDiffusion performs a one-time TensorRT engine compilation on first startup for the GPU architecture. This compilation:
+- Takes 2-6 hours on first run
+- Is cached in the PVC for subsequent startups
+- Blocks the `/v1/health/ready` endpoint until complete
+- Requires `failureThreshold: 720` to avoid premature pod termination
+
+**From values-openshift.yaml comments:**
+```yaml
+# RFDiffusion compiles TensorRT engines on FIRST-EVER start for a given
+# GPU architecture. This one-time build can take 2-4 hours. The compiled
+# engines are cached in ephemeral container storage, so subsequent pod
+# restarts on the same node reuse them — but a rollout (new ReplicaSet)
+# loses the cache and forces a full rebuild.
+# failureThreshold: 720 × periodSeconds: 30 = 6 hours headroom.
+startupProbe:
+  enabled: true
+  probe:
+    httpGet:
+      path: /v1/health/ready
+      port: 8000
+    initialDelaySeconds: 120
+    periodSeconds: 30
+    failureThreshold: 720
+```
 
 ## Known Issues and Gotchas
 
@@ -334,6 +378,61 @@ nemo-rerank-ranking-deployment-ranking-service-cache          Ready    15m
 oc delete nimcache --all -n $NAMESPACE
 oc delete pvc -l app.nvidia.com/nim-cache -n $NAMESPACE
 ```
+
+**Why this matters for BioNeMo NIMs:** AlphaFold2/AlphaFold2-Multimer have 2TB PVCs that take hours to download. Preserving these caches saves significant time and bandwidth on redeployment.
+
+### Issue: Multiple NIMs in a Single Workflow
+
+**Problem:** Some blueprints deploy multiple NIMs that must work together (e.g., protein binder design uses 4 NIMs in a pipeline).
+
+**Considerations:**
+- Each NIM gets its own NIMCache and NIMService
+- Each NIM requires a separate GPU allocation
+- Each NIM requires a separate PVC (unless explicitly sharing)
+- Startup times compound (all NIMs must be ready before workflow runs)
+- Total resource requirements multiply (4 NIMs × 1 GPU = 4 GPUs minimum)
+
+**Example from generative-protein-binder-design:**
+```yaml
+nimOperator:
+  alphafold2:
+    enabled: true
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+    storage:
+      pvc:
+        size: "2000Gi"
+  
+  rfdiffusion:
+    enabled: true
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+    storage:
+      pvc:
+        size: "350Gi"
+  
+  proteinmpnn:
+    enabled: true
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+    storage:
+      pvc:
+        size: "100Gi"
+  
+  alphafold2-multimer:
+    enabled: true
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+    storage:
+      pvc:
+        size: "2000Gi"
+```
+
+**Total requirements:** 4 GPUs, ~4.5TB storage, 6+ hours initial startup time.
 
 ## Dependencies
 

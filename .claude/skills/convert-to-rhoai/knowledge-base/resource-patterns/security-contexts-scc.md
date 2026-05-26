@@ -15,6 +15,11 @@ source_examples:
     fork_repo: "https://github.com/rh-ai-quickstart/generative-virtual-screening"
     notes: "Custom SCC for BioNeMo NIMs with runAsUser: 0 for MSA init container and SELinux skip for large model PVCs (1.5TB)"
     approach: "A"
+  - blueprint: "generative-protein-binder-design"
+    source_repo: "https://github.com/NVIDIA-BioNeMo-blueprints/generative-protein-binder-design"
+    fork_repo: "https://github.com/rh-ai-quickstart/generative-protein-binder-design"
+    notes: "Custom SCC with seLinuxContext: RunAsAny for AlphaFold2 2TB PVCs with millions of genomic database files to prevent recursive relabeling timeouts"
+    approach: "A"
 ---
 
 # Security Context Constraints (SCC) for OpenShift
@@ -199,15 +204,22 @@ This ensures NIMs created via NIM Operator get the SCC automatically.
 
 ## Components Requiring Custom SCC
 
-Based on video-search-and-summarization blueprint:
+Based on multiple blueprint examples:
 
-| Component | Reason | Default UID | SCC Field Needed |
-|-----------|--------|-------------|------------------|
-| arango-db | Runs as root | 0 | `runAsUser: RunAsAny` |
-| milvus | Runs as root or non-numeric user | 0 or `milvus` | `runAsUser: RunAsAny` |
-| milvus-minio | Runs as root | 0 | `runAsUser: RunAsAny` |
-| NIMCache | Large PVC SELinux relabeling timeout | varies | `seLinuxContext: RunAsAny` |
-| NIMService | May require specific UID | varies | `runAsUser: RunAsAny` |
+| Component | Reason | Default UID | SCC Field Needed | Blueprint Example |
+|-----------|--------|-------------|------------------|-------------------|
+| arango-db | Runs as root | 0 | `runAsUser: RunAsAny` | video-search-and-summarization |
+| milvus | Runs as root or non-numeric user | 0 or `milvus` | `runAsUser: RunAsAny` | video-search-and-summarization |
+| milvus-minio | Runs as root | 0 | `runAsUser: RunAsAny` | video-search-and-summarization |
+| NIMCache (LLM) | Large PVC SELinux relabeling timeout | varies | `seLinuxContext: RunAsAny` | video-search-and-summarization |
+| NIMCache (BioNeMo) | Very large PVC (2TB) with millions of files | varies | `seLinuxContext: RunAsAny` | generative-protein-binder-design |
+| NIMService | May require specific UID | varies | `runAsUser: RunAsAny` | multiple |
+
+**BioNeMo-specific considerations:**
+- AlphaFold2 NIMCache: 2TB PVC, millions of genomic database files
+- AlphaFold2-Multimer NIMCache: 2TB PVC, same database as AlphaFold2
+- RFDiffusion NIMCache: 350GB PVC, model + TensorRT compilation cache
+- ProteinMPNN NIMCache: 100GB PVC, standard model storage
 
 ## Priority Considerations
 
@@ -226,7 +238,7 @@ OpenShift SCCs have priorities that determine which SCC is selected:
 
 ### Issue: SELinux Relabeling Timeout on Large PVCs
 
-**Problem:** When a PVC is mounted, OpenShift recursively relabels all files with SELinux contexts. For NIM model caches (50-100 GiB), this can take hours and cause startup timeouts.
+**Problem:** When a PVC is mounted, OpenShift recursively relabels all files with SELinux contexts. For NIM model caches (50-100 GiB), this can take hours and cause startup timeouts. For BioNeMo NIMs with 2TB PVCs containing millions of genomic database files (AlphaFold2), relabeling is essentially impossible.
 
 **Error Messages:**
 ```
@@ -238,6 +250,40 @@ Warning: Failed to set pod label: timed out waiting for the condition
 seLinuxContext:
   type: RunAsAny
 ```
+
+**Real-world example from generative-protein-binder-design:**
+
+AlphaFold2 requires a 2TB PVC with millions of genomic database files. The custom SCC explicitly documents the rationale:
+
+```yaml
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: {{ $fullName }}-nim
+  annotations:
+    kubernetes.io/description: >-
+      Like nonroot, but skips recursive SELinux relabeling on volume mounts.
+      Required for NIM services with very large cached model PVCs.
+# ... rest of SCC definition ...
+seLinuxContext:
+  type: RunAsAny  # Prevents recursive relabeling
+```
+
+**From values-openshift.yaml comments:**
+```yaml
+# Creates a custom SCC (protein-design-nim) that is like "nonroot" but
+# with seLinuxContext: RunAsAny. This prevents the kubelet from
+# recursively relabeling every file on mounted volumes — critical for
+# AlphaFold2's 2TB PVCs with millions of genomic database files.
+scc:
+  create: true
+```
+
+**When to use `seLinuxContext: RunAsAny`:**
+- NIM model caches 50 GiB+ (LLM NIMs)
+- NIM model caches 1-2 TB+ (BioNeMo NIMs)
+- PVCs with millions of small files (genomic databases, model shards)
+- Any PVC where recursive relabeling would take hours
 
 ### Issue: SCC Not Applied to Pods
 
