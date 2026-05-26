@@ -106,7 +106,7 @@ find "$KB_DIR" -name "*.md" -not -name "README.md" -type f
 #### 2.2 Score and Load Relevant Knowledge
 
 For each knowledge file:
-1. Extract frontmatter only (first ~20 lines): `sed -n '/^---$/,/^---$/p' <file>`
+1. Extract frontmatter only: `awk 'n==2{exit} /^---$/{n++} n' <file>`
 2. Score using algorithm from `retrieval-algorithm.md`:
    - Component matches: +10 points each
    - Architecture match: +5 points
