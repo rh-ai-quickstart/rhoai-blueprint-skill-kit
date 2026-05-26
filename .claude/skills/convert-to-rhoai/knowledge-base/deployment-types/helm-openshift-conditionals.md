@@ -10,6 +10,12 @@ source_examples:
     source_repo: "https://github.com/NVIDIA-AI-Blueprints/data-flywheel"
     fork_repo: "https://github.com/rh-ai-quickstart/nvidia-data-flywheel"
     notes: "Complete example of Helm chart with openshift.enabled conditional support"
+    approach: "A"
+  - blueprint: "aiq"
+    source_repo: "https://github.com/NVIDIA-AI-Blueprints/aiq"
+    fork_repo: "https://github.com/rh-ai-quickstart/nvidia-aiq"
+    notes: "Overlay strategy with dedicated openshift.yaml template and nullable security contexts"
+    approach: "B"
 ---
 
 # Helm Charts with OpenShift Conditional Support
@@ -307,9 +313,351 @@ For Python/UV-based applications in restricted environments:
 4. **Maintainability**: Changes to security contexts apply everywhere via helpers
 5. **Gradual Migration**: Can test OpenShift mode before fully migrating
 
+---
+
+## Approach B: Overlay Strategy (from aiq blueprint)
+
+### When to Use
+
+Use this approach when:
+- You want **minimal changes to upstream templates**
+- You're maintaining a fork and want easy upstream syncing
+- You prefer **complete separation** between Kubernetes and OpenShift resources
+- You want all OpenShift-specific resources in a **single dedicated file**
+
+### Differences from Approach A
+
+| Aspect | Approach A (Conditionals) | Approach B (Overlay) |
+|--------|---------------------------|----------------------|
+| Template modification | Conditionals scattered throughout | Only nullable security context |
+| OpenShift resources | Inline with conditionals | Dedicated openshift.yaml file |
+| Values configuration | Single values file | Overlay values-openshift.yaml |
+| Security context | Conditionally rendered | Set to null in overlay |
+| Upstream sync | Moderate conflict risk | Minimal conflict risk |
+
+### Pattern Structure
+
+#### 1. Dedicated OpenShift Template
+
+Create `templates/openshift.yaml` that only renders when `openshift.enabled: true`:
+
+```yaml
+{{- $openshift := .Values.openshift | default dict }}
+{{- if $openshift.enabled }}
+
+# Route auto-conversion: checks route.enabled first, falls back to ingress.enabled
+{{- range $appName, $appConfig := .Values.apps }}
+{{- if $appConfig.enabled }}
+{{- $appRoute := $appConfig.route | default dict }}
+{{- $appIngress := $appConfig.ingress | default dict }}
+{{- $routeEnabled := false }}
+{{- if and (hasKey $appRoute "enabled") $appRoute.enabled }}
+{{- $routeEnabled = true }}
+{{- else }}
+{{- if eq (kindOf $appIngress) "bool" }}
+{{- $routeEnabled = $appIngress }}
+{{- else if hasKey $appIngress "enabled" }}
+{{- $routeEnabled = $appIngress.enabled }}
+{{- end }}
+{{- end }}
+
+{{- if $routeEnabled }}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "chart.appFullname" (list $ $appName) }}
+spec:
+  to:
+    kind: Service
+    name: {{ include "chart.appFullname" (list $ $appName) }}
+  port:
+    targetPort: {{ $appConfig.service.port }}
+  {{- if $appRoute.tls }}
+  tls:
+    termination: {{ $appRoute.tls.termination | default "edge" }}
+    insecureEdgeTerminationPolicy: {{ $appRoute.tls.insecureEdgeTerminationPolicy | default "Redirect" }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+---
+# Grant anyuid SCC to all app service accounts
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $.Values.project.name }}-anyuid-scc
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:anyuid
+subjects:
+  - kind: ServiceAccount
+    name: default
+{{- range $appName, $appConfig := .Values.apps }}
+{{- if $appConfig.enabled }}
+  - kind: ServiceAccount
+    name: {{ include "chart.appFullname" (list $ $appName) }}
+{{- end }}
+{{- end }}
+
+{{- $ngcSecret := $openshift.ngcSecret | default dict }}
+{{- if $ngcSecret.password }}
+---
+# NGC image pull secret from values
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ngc-secret
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: {{ printf `{"auths":{"nvcr.io":{"auth":"%s"}}}` (printf "$oauthtoken:%s" $ngcSecret.password | b64enc) | b64enc }}
+{{- end }}
+
+{{- $apiKeys := $openshift.apiKeys | default dict }}
+---
+# Application credentials secret from values
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $.Values.project.name }}-credentials
+type: Opaque
+stringData:
+  NVIDIA_API_KEY: {{ $apiKeys.nvidiaApiKey | default "" | quote }}
+  TAVILY_API_KEY: {{ $apiKeys.tavilyApiKey | default "" | quote }}
+  DB_USER_NAME: {{ $apiKeys.dbUserName | default "app_user" | quote }}
+  DB_USER_PASSWORD: {{ $apiKeys.dbUserPassword | default "changeme" | quote }}
+
+{{- end }}
+```
+
+#### 2. Nullable Security Context Pattern
+
+In `templates/deployment.yaml`, use a double-check pattern to allow null values:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      # Pod-level security context
+      {{- if hasKey $appConfig "podSecurityContext" }}
+      {{- if $appConfig.podSecurityContext }}
+      securityContext:
+        {{- toYaml $appConfig.podSecurityContext | nindent 8 }}
+      {{- end }}
+      {{- else }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      {{- end }}
+      
+      containers:
+        - name: {{ $appName }}
+          # Container-level security context
+          {{- if hasKey $appConfig "securityContext" }}
+          {{- if $appConfig.securityContext }}
+          securityContext:
+            {{- toYaml $appConfig.securityContext | nindent 12 }}
+          {{- end }}
+          {{- else }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: false
+          {{- end }}
+```
+
+**Why double-check?**
+- First `if hasKey` - checks if key exists in values
+- Second `if <value>` - checks if value is truthy (non-null)
+- This allows `podSecurityContext: null` to suppress the security context block completely
+
+#### 3. Overlay Values File
+
+Create `values-openshift.yaml` that's applied with `-f` flag:
+
+```yaml
+# OpenShift value overrides
+#
+# Usage:
+#   helm install app ./chart \
+#     -f values-openshift.yaml \
+#     --set openshift.ngcSecret.password="$NGC_API_KEY" \
+#     --set openshift.apiKeys.nvidiaApiKey="$NVIDIA_API_KEY"
+
+openshift:
+  enabled: true
+  
+  ngcSecret:
+    password: ""  # Pass via --set to avoid storing in files
+  
+  apiKeys:
+    nvidiaApiKey: ""
+    tavilyApiKey: ""
+    dbUserName: "app_user"
+    dbUserPassword: "changeme"
+
+apps:
+  backend:
+    imagePullSecrets:
+      - name: ngc-secret
+    ingress:
+      enabled: false
+    route:
+      enabled: true
+      tls:
+        termination: edge
+        insecureEdgeTerminationPolicy: Redirect
+    podSecurityContext: null  # Let OpenShift SCC manage it
+    securityContext: null
+  
+  frontend:
+    imagePullSecrets:
+      - name: ngc-secret
+    ingress:
+      enabled: false
+    route:
+      enabled: true
+      tls:
+        termination: edge
+    podSecurityContext: null
+    securityContext: null
+  
+  database:
+    podSecurityContext: null
+    securityContext: null
+```
+
+#### 4. Base Values Configuration
+
+In `values.yaml`, add minimal OpenShift section:
+
+```yaml
+openshift:
+  enabled: false  # Set to true to enable OpenShift-compatible deployment
+  ngcSecret:
+    password: ""
+  apiKeys:
+    nvidiaApiKey: ""
+    tavilyApiKey: ""
+    dbUserName: "app_user"
+    dbUserPassword: "changeme"
+```
+
+### Usage
+
+**Deploy to OpenShift:**
+```bash
+helm install app ./chart \
+  -f values-openshift.yaml \
+  --set openshift.ngcSecret.password="$NGC_API_KEY" \
+  --set openshift.apiKeys.nvidiaApiKey="$NVIDIA_API_KEY" \
+  --set openshift.apiKeys.tavilyApiKey="$TAVILY_API_KEY" \
+  --namespace my-namespace
+```
+
+**Deploy to Standard Kubernetes:**
+```bash
+helm install app ./chart \
+  --namespace my-namespace
+```
+
+### Key Patterns
+
+#### 1. Route Auto-Conversion Logic
+
+The route creation checks `route.enabled` first, then falls back to `ingress.enabled` for backward compatibility:
+
+```yaml
+{{- $routeEnabled := false }}
+{{- if and (hasKey $appRoute "enabled") $appRoute.enabled }}
+{{- $routeEnabled = true }}
+{{- else }}
+{{- if eq (kindOf $appIngress) "bool" }}
+{{- $routeEnabled = $appIngress }}
+{{- else if hasKey $appIngress "enabled" }}
+{{- $routeEnabled = $appIngress.enabled }}
+{{- end }}
+{{- end }}
+```
+
+This allows existing Kubernetes configurations with `ingress.enabled: true` to automatically get Routes on OpenShift.
+
+#### 2. Dynamic SCC Binding
+
+The anyuid RoleBinding dynamically includes all enabled app service accounts:
+
+```yaml
+subjects:
+  - kind: ServiceAccount
+    name: default
+{{- range $appName, $appConfig := .Values.apps }}
+{{- if $appConfig.enabled }}
+  - kind: ServiceAccount
+    name: {{ include "chart.appFullname" (list $ $appName) }}
+{{- end }}
+{{- end }}
+```
+
+No need to manually list service accounts - they're auto-discovered from `.Values.apps`.
+
+#### 3. Declarative Secret Creation
+
+Secrets are created from values passed via `--set` flags:
+
+```yaml
+{{- if $ngcSecret.password }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ngc-secret
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: {{ printf `{"auths":{"nvcr.io":{"auth":"%s"}}}` (printf "$oauthtoken:%s" $ngcSecret.password | b64enc) | b64enc }}
+{{- end }}
+```
+
+This eliminates manual `oc create secret` commands - single `helm install` does everything.
+
+### Benefits
+
+1. **Minimal Upstream Impact**: Only one change to core templates (nullable security context)
+2. **Easy Fork Maintenance**: Upstream changes rarely conflict with OpenShift overlay
+3. **Clear Separation**: All OpenShift resources in one file, easy to review
+4. **Single Command Deploy**: No manual secret creation steps
+5. **Auto-Discovery**: Service accounts and routes auto-configured from enabled apps
+
+### Gotchas
+
+1. **Security context must be `null`, not `{}`**: Empty dict would still render the key
+2. **Overlay file applied with `-f` flag**: Not merged into a subkey
+3. **Double-check pattern required**: Both `hasKey` and value check needed for nullable fields
+
+## Choosing Between Approaches
+
+### Use Approach A (Conditional Templates) when:
+- You control the upstream repository
+- You want a single values file
+- You prefer explicit conditionals over overlay files
+- Your team is comfortable with scattered conditionals
+
+### Use Approach B (Overlay Strategy) when:
+- You're maintaining a fork of an upstream chart
+- You want minimal merge conflicts with upstream
+- You prefer complete separation of concerns
+- You want all OpenShift resources in one place for easy review
+- You're planning to submit OpenShift support as a PR upstream (cleaner diff)
+
 ## Related Patterns
 
 - [[security-contexts-scc]] - Security context details
 - [[networking-routes-ingress]] - Route configuration patterns
-- [[mongodb-on-rhoai]] - Example component using this pattern
-- [[redis-on-rhoai]] - Example component using this pattern
+- [[mongodb-on-rhoai]] - Example component using Approach A
+- [[redis-on-rhoai]] - Example component using Approach A
