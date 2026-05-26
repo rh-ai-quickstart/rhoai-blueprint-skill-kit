@@ -20,6 +20,11 @@ source_examples:
     fork_repo: "https://github.com/rh-ai-quickstart/generative-virtual-screening"
     notes: "Routes for 4 NIM services (MSA, OpenFold2, GenMol, DiffDock) using range-based template iteration"
     approach: "A"
+  - blueprint: "rag"
+    source_repo: "https://github.com/NVIDIA-AI-Blueprints/rag"
+    fork_repo: "https://github.com/rh-ai-quickstart/nvidia-blueprint-enterprise-rag-pipeline"
+    notes: "Routes with HAProxy timeout annotations for long-running RAG API calls (frontend and ragServer routes)"
+    approach: "A"
 ---
 
 # OpenShift Routes for External Access
@@ -187,6 +192,112 @@ openshift:
 **Requirements:**
 - DNS record pointing to cluster ingress
 - Certificate trust (edge termination uses cluster wildcard cert)
+
+## Route Annotations
+
+OpenShift Routes support HAProxy router annotations to configure timeouts, load balancing, and other routing behavior.
+
+### HAProxy Timeout for Long-Running Requests
+
+**Problem:** Default HAProxy timeout is 30 seconds. API endpoints that process large documents, perform complex RAG queries, or run inference may take longer and timeout.
+
+**Solution:** Set `haproxy.router.openshift.io/timeout` annotation to increase the timeout.
+
+**Example from RAG blueprint:**
+```yaml
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "nvidia-blueprint-rag.fullname" . }}
+  labels:
+    {{- include "nvidia-blueprint-rag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rag-server
+  annotations:
+    haproxy.router.openshift.io/timeout: {{ $ragServerRoute.timeout | default "300s" | quote }}
+    {{- with $ragServerRoute.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  to:
+    kind: Service
+    name: {{ include "nvidia-blueprint-rag.fullname" . }}
+    weight: 100
+  port:
+    targetPort: {{ .Values.service.port | default 8081 }}
+  tls:
+    termination: edge
+```
+
+**Values configuration:**
+```yaml
+openshift:
+  routes:
+    ragServer:
+      enabled: true
+      timeout: "300s"  # 5 minutes for RAG processing
+      host: ""
+      tls:
+        termination: edge
+        insecureEdgeTerminationPolicy: Redirect
+```
+
+**When to Use:**
+- RAG pipelines with document ingestion and vector search
+- Inference endpoints with large context windows
+- Batch processing APIs
+- Any API that may take >30 seconds to respond
+
+**Timeout Format:**
+- Must be a string with time unit: `"300s"`, `"5m"`, `"1h"`
+- Default if not specified: `30s`
+- Recommended for RAG: `300s` (5 minutes)
+- Recommended for document processing: `600s` (10 minutes)
+
+### Other Common Annotations
+
+**IP Whitelisting:**
+```yaml
+annotations:
+  haproxy.router.openshift.io/ip_whitelist: "192.168.1.0/24 10.0.0.0/8"
+```
+
+**Load Balancing Algorithm:**
+```yaml
+annotations:
+  haproxy.router.openshift.io/balance: roundrobin  # or leastconn, source
+```
+
+**Rate Limiting (per-IP):**
+```yaml
+annotations:
+  haproxy.router.openshift.io/rate-limit-connections: "100"
+  haproxy.router.openshift.io/rate-limit-connections.rate-http: "100"
+```
+
+### Conditional Annotations
+
+Allow users to pass additional annotations via values:
+
+```yaml
+metadata:
+  annotations:
+    haproxy.router.openshift.io/timeout: {{ $ragServerRoute.timeout | default "300s" | quote }}
+    {{- with $ragServerRoute.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+```
+
+**Usage in values:**
+```yaml
+openshift:
+  routes:
+    ragServer:
+      enabled: true
+      timeout: "300s"
+      annotations:
+        haproxy.router.openshift.io/ip_whitelist: "10.0.0.0/8"
+        custom-annotation: "value"
+```
 
 ## Target Service Configuration
 

@@ -16,6 +16,11 @@ source_examples:
     fork_repo: "https://github.com/rh-ai-quickstart/nvidia-aiq"
     notes: "Overlay strategy with dedicated openshift.yaml template and nullable security contexts"
     approach: "B"
+  - blueprint: "rag"
+    source_repo: "https://github.com/NVIDIA-AI-Blueprints/rag"
+    fork_repo: "https://github.com/rh-ai-quickstart/nvidia-blueprint-enterprise-rag-pipeline"
+    notes: "Overlay strategy with openshift.yaml template, demonstrates dynamic release naming for subchart service accounts in anyuid SCC RoleBinding"
+    approach: "B"
 ---
 
 # Helm Charts with OpenShift Conditional Support
@@ -639,6 +644,91 @@ This eliminates manual `oc create secret` commands - single `helm install` does 
 1. **Security context must be `null`, not `{}`**: Empty dict would still render the key
 2. **Overlay file applied with `-f` flag**: Not merged into a subkey
 3. **Double-check pattern required**: Both `hasKey` and value check needed for nullable fields
+4. **Use dynamic release names for subchart service accounts**: Avoid hardcoding service account names in RoleBindings/SCCs to allow multiple releases in the same cluster
+
+#### Dynamic Release Naming for Service Accounts
+
+**Problem:** Hardcoded service account names in RoleBindings/SCCs only work for one release name, preventing multiple instances of the same blueprint from coexisting in a cluster.
+
+**Bad Example (hardcoded):**
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "nvidia-blueprint-rag.fullname" . }}-anyuid-scc
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:anyuid
+subjects:
+  - kind: ServiceAccount
+    name: rag-nv-ingest  # ❌ Only works for release named "rag"
+  - kind: ServiceAccount
+    name: rag-minio      # ❌ Only works for release named "rag"
+  - kind: ServiceAccount
+    name: rag-redis-master  # ❌ Only works for release named "rag"
+```
+
+**Good Example (dynamic naming):**
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "nvidia-blueprint-rag.fullname" . }}-anyuid-scc
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:anyuid
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-nv-ingest  # ✅ Works for any release name
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-minio      # ✅ Works for any release name
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-redis-master  # ✅ Works for any release name
+```
+
+**Why This Matters:**
+- Allows `helm install rag1 ...` and `helm install rag2 ...` in the same namespace
+- Enables testing different configurations side-by-side
+- Matches Helm's subchart naming convention (subcharts automatically prefix resources with release name)
+
+**Exception for NIM Operator:**
+The `nim-cache-sa` ServiceAccount is created by the NIM Operator with a fixed name (not by the Helm chart), so it doesn't use the release name prefix:
+
+```yaml
+subjects:
+  - kind: ServiceAccount
+    name: nim-cache-sa  # Fixed name - created by NIM Operator, not Helm
+```
+
+**How to Identify Service Account Names:**
+
+For Bitnami subcharts (Redis, MinIO, PostgreSQL, MongoDB):
+```yaml
+{{ .Release.Name }}-<subchart-name>-<component>
+```
+
+For NVIDIA subcharts (nv-ingest):
+```yaml
+{{ .Release.Name }}-<subchart-name>
+```
+
+For custom subcharts, check the subchart's `templates/serviceaccount.yaml`:
+```yaml
+name: {{ include "subchart.serviceAccountName" . }}
+```
+
+**Real-World Fix from RAG Blueprint:**
+Commit ca9844e fixed this issue with the message: "fix: use dynamic release name for OpenShift SCC service accounts"
+
+**Before:**
+- Could only install with `helm install rag ...`
+- Installing `helm install rag-dev ...` would fail (SCC not granted to correct service accounts)
+
+**After:**
+- Works with any release name: `rag`, `rag-dev`, `rag-prod`, etc.
+- Multiple instances can coexist in same namespace
 
 ## Choosing Between Approaches
 

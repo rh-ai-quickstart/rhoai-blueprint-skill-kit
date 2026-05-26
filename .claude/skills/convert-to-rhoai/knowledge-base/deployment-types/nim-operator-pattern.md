@@ -20,6 +20,11 @@ source_examples:
     fork_repo: "https://github.com/rh-ai-quickstart/generative-protein-binder-design"
     notes: "Demonstrates NIM Operator integration for multiple BioNeMo NIMs (AlphaFold2, RFDiffusion, ProteinMPNN, AlphaFold2-Multimer) with very large PVCs (up to 2TB) and extended startup probes (up to 6 hours for TensorRT compilation)"
     approach: "A"
+  - blueprint: "rag"
+    source_repo: "https://github.com/NVIDIA-AI-Blueprints/rag"
+    fork_repo: "https://github.com/rh-ai-quickstart/nvidia-blueprint-enterprise-rag-pipeline"
+    notes: "Multiple NIMs (LLM, embedding, reranking, VLM) with NIMCache tolerations pattern and nim-cache-sa pull secret workaround documented"
+    approach: "A"
 ---
 
 # NIM Operator Integration Pattern
@@ -433,6 +438,148 @@ nimOperator:
 ```
 
 **Total requirements:** 4 GPUs, ~4.5TB storage, 6+ hours initial startup time.
+
+### Issue: NIMCache ImagePullBackOff on OpenShift (nim-cache-sa Pull Secret)
+
+**Problem:** NIMCache pods stuck in `ImagePullBackOff` even though the NGC pull secret exists in the namespace.
+
+**Root Cause:** The NIM Operator creates its own ServiceAccount (`nim-cache-sa`) for NIMCache Jobs, but it doesn't automatically link the NGC pull secret to this ServiceAccount.
+
+**Error Message:**
+```
+Failed to pull image "nvcr.io/nim/...": failed to pull and unpack image
+```
+
+**Solution:** Manually link the NGC pull secret to `nim-cache-sa` after helm install:
+
+```bash
+# Link NGC secret to nim-cache-sa ServiceAccount
+oc secrets link nim-cache-sa ngc-secret --for=pull -n <namespace>
+
+# Delete existing NIMCache pods to force recreation with the linked secret
+oc delete pod -l app.nvidia.com/nim-cache -n <namespace>
+```
+
+**When to Apply:**
+- Required for all deployments using NIM Operator on OpenShift
+- Must be done after `helm install` or `helm upgrade`
+- If NIMCache pods are already running, no action needed
+
+**Automation:**
+This is a limitation of the NIM Operator and cannot be automated via Helm chart hooks (Helm hooks run before ServiceAccount is created). Document this in deployment instructions as a required post-install step.
+
+**Example from RAG blueprint deploy-helm-openshift.md:**
+```markdown
+5. Link the NGC pull secret to the NIM Operator ServiceAccount.
+
+    The NIM Operator creates a `nim-cache-sa` ServiceAccount for model cache jobs. Link the pull secret so it can pull NIM model images:
+
+    ```sh
+    oc secrets link nim-cache-sa ngc-secret --for=pull -n $NAMESPACE
+    ```
+
+    If NIMCache pods are stuck in `ImagePullBackOff`, delete them so the operator recreates them with the linked secret:
+
+    ```sh
+    oc delete pod -l app.nvidia.com/nim-cache -n $NAMESPACE
+    ```
+```
+
+**Verification:**
+```bash
+# Check if secret is linked
+oc get serviceaccount nim-cache-sa -n <namespace> -o yaml | grep imagePullSecrets -A 2
+
+# Expected output:
+# imagePullSecrets:
+# - name: ngc-secret
+
+# Check NIMCache pod status
+oc get pods -l app.nvidia.com/nim-cache -n <namespace>
+```
+
+### Issue: NIMCache Tolerations for Tainted GPU Nodes
+
+**Problem:** NIMCache Jobs are stuck in `Pending` state even though GPU nodes are available and NIMService tolerations are configured.
+
+**Root Cause:** GPU nodes often have taints (e.g., `nvidia.com/gpu=present:NoSchedule`) to prevent non-GPU workloads from scheduling. NIMCache Jobs need to run on GPU nodes to download models to node-local storage, but they don't automatically inherit tolerations from the NIMService.
+
+**Solution:** Add tolerations to **both** NIMCache and NIMService resources:
+
+**Example from RAG blueprint embedding-nim.yaml:**
+```yaml
+---
+apiVersion: apps.nvidia.com/v1alpha1
+kind: NIMCache
+metadata:
+  name: {{ $nimModel.service.name }}-cache
+spec:
+  source:
+    ngc:
+      modelPuller: "{{ $nimModel.image.repository }}:{{ $nimModel.image.tag }}"
+      pullSecret: {{ $.Values.imagePullSecret.name }}
+      authSecret: {{ $.Values.ngcApiSecret.name }}
+  storage:
+    pvc:
+      create: {{ $nimModel.storage.pvc.create | default true }}
+      size: {{ $nimModel.storage.pvc.size | default "50Gi" }}
+      volumeAccessMode: {{ $nimModel.storage.pvc.volumeAccessMode | default "ReadWriteOnce" }}
+  {{- with $nimModel.tolerations }}
+  tolerations:
+{{ toYaml . | nindent 4 }}
+  {{- end }}
+---
+apiVersion: apps.nvidia.com/v1alpha1
+kind: NIMService
+metadata:
+  name: {{ $nimModel.service.name }}
+spec:
+  {{- with $nimModel.tolerations }}
+  tolerations:
+{{ toYaml . | nindent 4 }}
+  {{- end }}
+  # ... rest of NIMService spec
+```
+
+**Values configuration:**
+```yaml
+nimOperator:
+  nvidia-nim-llama-32-nv-embedqa-1b-v2:
+    enabled: true
+    tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+```
+
+**Why This Matters:**
+- Without NIMCache tolerations, model download never completes
+- NIMService can't start until NIMCache is Ready
+- Even if NIMService has tolerations, it will stay Pending waiting for NIMCache
+
+**Verification:**
+```bash
+# Check NIMCache Job scheduling
+oc get jobs -l app.nvidia.com/nim-cache -n <namespace>
+oc describe job <nim-cache-job> -n <namespace>
+
+# If stuck Pending, check for toleration mismatch
+oc get job <nim-cache-job> -n <namespace> -o yaml | grep -A 5 tolerations
+```
+
+**Helm CLI Example (from RAG blueprint):**
+```bash
+helm upgrade --install rag -n $NAMESPACE . \
+  -f values-openshift.yaml \
+  --set-json 'nimOperator.nim-llm.tolerations=[{"key":"gpu-taint","operator":"Exists","effect":"NoSchedule"}]' \
+  --set-json 'nimOperator.nvidia-nim-llama-32-nv-embedqa-1b-v2.tolerations=[{"key":"gpu-taint","operator":"Exists","effect":"NoSchedule"}]' \
+  --set-json 'nimOperator.nvidia-nim-llama-32-nv-rerankqa-1b-v2.tolerations=[{"key":"gpu-taint","operator":"Exists","effect":"NoSchedule"}]'
+```
+
+**Pattern Evolution:**
+- Initial blueprint conversions often missed NIMCache tolerations
+- RAG blueprint (commit 89dc0ef) explicitly added tolerations to all NIM templates
+- Now considered a required pattern for OpenShift deployments
 
 ## Dependencies
 

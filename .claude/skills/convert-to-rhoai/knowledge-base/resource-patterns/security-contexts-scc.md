@@ -20,6 +20,11 @@ source_examples:
     fork_repo: "https://github.com/rh-ai-quickstart/generative-protein-binder-design"
     notes: "Custom SCC with seLinuxContext: RunAsAny for AlphaFold2 2TB PVCs with millions of genomic database files to prevent recursive relabeling timeouts"
     approach: "A"
+  - blueprint: "rag"
+    source_repo: "https://github.com/NVIDIA-AI-Blueprints/rag"
+    fork_repo: "https://github.com/rh-ai-quickstart/nvidia-blueprint-enterprise-rag-pipeline"
+    notes: "Uses anyuid SCC RoleBinding for multiple infrastructure services (nv-ingest, minio, redis, zipkin) and NIMs"
+    approach: "B"
 ---
 
 # Security Context Constraints (SCC) for OpenShift
@@ -234,6 +239,173 @@ OpenShift SCCs have priorities that determine which SCC is selected:
 
 **Recommendation:** Use priority `10` for custom SCCs to match `anyuid` but with more restrictive permissions.
 
+---
+
+## Approach B: anyuid SCC RoleBinding (from RAG Blueprint)
+
+### When to Use This Approach
+
+Use this simpler approach when:
+- Components require `runAsUser: 0` but don't need special SELinux handling
+- No large PVCs that would benefit from skipping SELinux relabeling
+- You want a simpler deployment without creating custom SCC resources
+- Infrastructure services (Redis, MinIO, PostgreSQL) need root access
+
+**Use Approach A (Custom SCC) when:**
+- Large PVCs (50GB+) need `seLinuxContext: RunAsAny` to skip relabeling
+- You need fine-grained control over capabilities and volumes
+- BioNeMo NIMs with multi-TB PVCs containing millions of files
+
+### Pattern Overview
+
+Instead of creating a custom SCC, bind service accounts to OpenShift's built-in `anyuid` SCC via a namespace-scoped RoleBinding.
+
+**Benefits:**
+- Simpler - single resource instead of SCC + RoleBinding
+- No custom SCC management
+- Works across OpenShift versions without SCC schema changes
+- Namespace-scoped - no cluster-admin required to create SCC
+
+**Trade-offs:**
+- Doesn't skip SELinux relabeling (use Approach A if you need this)
+- Less granular control over security permissions
+- Uses built-in SCC that can't be customized
+
+### 1. RoleBinding to anyuid SCC
+
+**Example from RAG blueprint openshift.yaml:**
+```yaml
+{{- if .Values.openshift.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "nvidia-blueprint-rag.fullname" . }}-anyuid-scc
+  labels:
+    {{- include "nvidia-blueprint-rag.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:anyuid
+subjects:
+  - kind: ServiceAccount
+    name: default
+  - kind: ServiceAccount
+    name: {{ include "nvidia-blueprint-rag.serviceAccountName" . }}
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-nv-ingest
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-minio
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-redis-master
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-redis-replica
+  - kind: ServiceAccount
+    name: nim-cache-sa
+{{- if .Values.zipkin.enabled }}
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-zipkin
+{{- end }}
+{{- end }}
+```
+
+### 2. Dynamic Release Naming Pattern
+
+**Critical fix from commit ca9844e:** Use `{{ .Release.Name }}-` prefix for subchart service accounts to support multiple blueprint instances in the same cluster.
+
+**Before (hardcoded names):**
+```yaml
+subjects:
+  - kind: ServiceAccount
+    name: rag-nv-ingest  # ❌ Only works for release named "rag"
+  - kind: ServiceAccount
+    name: rag-minio
+```
+
+**After (dynamic names):**
+```yaml
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-nv-ingest  # ✅ Works for any release name
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-minio
+```
+
+**Exception:** `nim-cache-sa` is created by the NIM Operator with a fixed name (not by Helm), so it doesn't use the release prefix.
+
+### 3. Values Configuration
+
+**values-openshift.yaml:**
+```yaml
+openshift:
+  enabled: true
+  # No scc.create flag needed - just enable openshift support
+```
+
+### 4. Service Accounts Requiring anyuid SCC
+
+Based on the RAG blueprint's infrastructure:
+
+| Service Account | Component | Reason for anyuid |
+|----------------|-----------|-------------------|
+| `default` | Subchart defaults | Used by various subcharts |
+| `{{ .Release.Name }}-nv-ingest` | NV-Ingest service | Document processing pipeline |
+| `{{ .Release.Name }}-minio` | MinIO object storage | Runs as UID 0 |
+| `{{ .Release.Name }}-redis-master` | Redis master | Bitnami Redis chart default UID |
+| `{{ .Release.Name }}-redis-replica` | Redis replicas | Bitnami Redis chart default UID |
+| `nim-cache-sa` | NIM Operator cache jobs | Created by NIM Operator |
+| `{{ .Release.Name }}-zipkin` | Zipkin tracing | If observability enabled |
+
+### 5. Conditional Observability Services
+
+Gate optional service accounts behind feature flags:
+
+```yaml
+{{- if .Values.zipkin.enabled }}
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-zipkin
+{{- end }}
+```
+
+This prevents binding SCC to service accounts that won't be created.
+
+### Comparison: Approach A vs Approach B
+
+| Aspect | Approach A (Custom SCC) | Approach B (anyuid RoleBinding) |
+|--------|------------------------|--------------------------------|
+| **Resources** | SCC + RoleBinding | RoleBinding only |
+| **Complexity** | Higher | Lower |
+| **SELinux Skip** | ✅ Yes (`seLinuxContext: RunAsAny`) | ❌ No |
+| **Large PVCs** | ✅ Optimal for 50GB+ | ⚠️ May timeout on relabeling |
+| **Customization** | ✅ Fine-grained control | ❌ Uses built-in anyuid |
+| **Maintenance** | More complex | Simpler |
+| **Use Case** | BioNeMo, large NIM caches | Standard RAG, infrastructure services |
+
+### File Organization
+
+```
+deploy/helm/<chart-name>/
+├── templates/
+│   └── openshift.yaml         # Contains RoleBinding
+└── values-openshift.yaml
+    └── openshift:
+          enabled: true
+```
+
+### Conversion from Approach A
+
+If you have an existing blueprint using Approach A (custom SCC) and want to simplify to Approach B:
+
+1. **Check PVC sizes:** If all PVCs < 50 GiB, consider Approach B
+2. **Remove custom SCC definition** from openshift.yaml
+3. **Replace with RoleBinding** to `system:openshift:scc:anyuid`
+4. **Remove `scc.create` flag** from values
+5. **List all service accounts** that need root access in RoleBinding subjects
+6. **Test deployment** to ensure no SELinux relabeling timeouts
+
+**When NOT to convert:** If you have NIM PVCs >50GB or BioNeMo databases, keep Approach A for `seLinuxContext: RunAsAny`.
+
+---
+
 ## Known Issues and Gotchas
 
 ### Issue: SELinux Relabeling Timeout on Large PVCs
@@ -406,18 +578,11 @@ deploy/helm/
 
 ## Alternatives
 
-### Alternative 1: Use Built-in `anyuid` SCC
+### Alternative 1: Use Built-in `anyuid` SCC (See Approach B)
 
-**Pros:**
-- No custom SCC creation needed
-- Widely available
+Binding service accounts to the built-in `anyuid` SCC is now documented as **Approach B** above. This is a valid conversion approach, not just an alternative.
 
-**Cons:**
-- Still requires RoleBinding to grant to service accounts
-- Doesn't skip SELinux relabeling (can cause NIM PVC issues)
-- May be overly permissive
-
-**When to Use:** Simple blueprints without large PVCs or SELinux concerns
+**When to Use:** See "Approach B: anyuid SCC RoleBinding" section above.
 
 ### Alternative 2: Modify Container Images
 
