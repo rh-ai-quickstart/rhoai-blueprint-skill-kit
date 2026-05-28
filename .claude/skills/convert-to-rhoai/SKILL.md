@@ -410,6 +410,81 @@ Add RHOAI deployment section showing:
 
 ---
 
+### Phase 6.5: Automated Validation
+
+Spawn validation subagent to verify generated files. Iterate until clean or max 3 attempts.
+
+**IMPORTANT: Do NOT read `subagent-validation-prompt.md` yourself - it's only for the subagent to read.**
+
+#### 6.5.1 Spawn Validation Subagent
+
+```python
+Agent(
+    description="Validate RHOAI conversion outputs",
+    prompt=f"""
+Read and follow validation instructions from:
+.claude/skills/convert-to-rhoai/subagent-validation-prompt.md
+
+**Validation context:**
+- Blueprint directory: {blueprint_dir}
+- Deployment method: {deployment_method}
+- RHOAI mode toggle: {rhoai_mode_toggle}
+- Components: {components_list}
+
+Navigate to blueprint directory and run validation checks.
+Return report using format from instructions.
+"""
+)
+```
+
+#### 6.5.2 Review and Fix Issues
+
+```python
+validation_report = <subagent-response>
+errors = extract_errors(validation_report)
+
+# Review errors (filter false positives)
+real_errors = [e for e in errors if is_blocking(e)]
+
+# Fix real errors
+if real_errors:
+    for error in real_errors:
+        attempt_fix(error)
+    
+    # Re-validate (max 3 iterations)
+    if iteration < 3:
+        run_validation_again()
+```
+
+**Review criteria:**
+- Missing icon/labels? → Not blocking
+- Template syntax error? → Blocking, fix it
+- Missing required file? → Blocking, fix it
+
+#### 6.5.3 Document Results
+
+Append to RHOAI-CONVERSION.md:
+
+```markdown
+## Validation
+
+**Status:** {PASSED | WARNINGS | ERRORS}
+**Iterations:** {count}
+
+### Issues Fixed
+{list if any}
+
+### Warnings
+{list if any}
+
+### Manual Fixes Required
+{list if any}
+```
+
+Save full report: `VALIDATION-REPORT.md`
+
+---
+
 ### Phase 7: Output Summary
 
 **Read `output-templates.md` before continuing** for summary report template.
@@ -423,6 +498,10 @@ Print comprehensive summary using Conversion Summary Report template from `outpu
 - Files modified/created
 - Knowledge sources used
 - Context7 queries (if any)
+- **Validation status** (PASSED / PASSED WITH WARNINGS / INCOMPLETE)
+- **Validation iterations** (how many validation runs)
+- **Issues fixed automatically** (count and summary)
+- **Manual fixes required** (if any)
 - Next steps for user
 
 ---
@@ -430,10 +509,13 @@ Print comprehensive summary using Conversion Summary Report template from `outpu
 ## Supporting Documents
 
 - `reasoning-guardrails.md`: Concern areas to check during reasoning - **Read at Phase 3**
+- `subagent-validation-prompt.md`: Validation instructions for subagent - **DO NOT READ (subagent reads this, not you)**
 - `output-templates.md`: Templates for TEST-PLAN, RHOAI-CONVERSION, summary - **Read at Phase 6-7**
 - `knowledge-base/README.md`: Knowledge base structure and usage
 
 Read these documents at the appropriate phase boundaries as instructed above ("before continuing").
+
+**Note:** Only read documents marked for you to read. The subagent-validation-prompt.md is passed to the validation subagent via the Agent tool prompt - you should never read it directly to keep your context clean.
 
 ## Important Guidelines
 
@@ -446,6 +528,9 @@ Read these documents at the appropriate phase boundaries as instructed above ("b
 - ✅ Generate comprehensive test plan
 - ✅ Use Edit tool for modifying existing files
 - ✅ Check guardrails coverage before completing
+- ✅ Run automated validation via subagent before finalizing
+- ✅ Review validation errors critically (check for false positives)
+- ✅ Iterate validation until critical issues resolved
 
 ### DON'T:
 - ❌ Load all knowledge upfront (only load what's relevant)
@@ -453,7 +538,9 @@ Read these documents at the appropriate phase boundaries as instructed above ("b
 - ❌ Modify without conditional RHOAI mode toggles
 - ❌ Skip user decisions on model deployment strategy
 - ❌ Forget to document which knowledge sources were used
-- ❌ Generate code without test plan
+- ❌ Skip validation phase (always validate before completing)
+- ❌ Accept all validation errors blindly (review for false positives)
+- ❌ Deliver output with unresolved critical validation errors
 
 ## Error Handling
 
