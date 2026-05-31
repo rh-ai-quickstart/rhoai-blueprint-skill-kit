@@ -10,6 +10,11 @@ source_examples:
     fork_repo: "https://github.com/rh-ai-quickstart/nvidia-video-search-and-summarization"
     notes: "Demonstrates GPU resource allocation and tolerations for NIM services and VSS application"
     approach: "A"
+  - blueprint: "pdf-to-podcast"
+    source_repo: "https://github.com/NVIDIA-AI-Blueprints/pdf-to-podcast"
+    fork_repo: "https://github.com/rh-ai-quickstart/pdf-to-podcast"
+    notes: "Optional GPU acceleration for Celery worker with conditional Helm values"
+    approach: "B"
 ---
 
 # GPU Resource Allocation on OpenShift
@@ -522,3 +527,246 @@ When adding GPU support to a blueprint:
 - [ ] Test with different GPU node types (L40S, A100, H100)
 - [ ] Update README with GPU prerequisites
 - [ ] Add GPU verification commands to deployment guide
+
+---
+
+## Approach B: Optional GPU Acceleration (from pdf-to-podcast)
+
+### When to Use
+
+When GPU acceleration is **optional** rather than required - the workload can run on CPU but benefits from GPU acceleration. This pattern uses **conditional Helm values** to enable/disable GPU resources.
+
+**Use cases:**
+- PDF processing with optional GPU-accelerated OCR
+- Image processing with CPU fallback
+- ML inference that supports both CPU and GPU
+- Development/testing environments without GPUs
+
+### Differences from Approach A
+
+| Aspect | Approach A (Required GPU) | Approach B (Optional GPU) |
+|--------|---------------------------|---------------------------|
+| **GPU requirement** | Mandatory | Optional (disabled by default) |
+| **Values structure** | Direct resource limits | Nested `gpu.enabled` flag |
+| **Scheduling** | Always requires GPU node | Conditional GPU scheduling |
+| **Fallback** | Pod won't schedule without GPU | Runs on CPU if GPU disabled |
+| **Configuration** | Static | User-controlled via Helm values |
+
+### Pattern Implementation
+
+**Values.yaml structure** with GPU as optional feature:
+
+```yaml
+celeryWorker:
+  image:
+    tag: "latest"
+  replicas: 1
+  gpu:
+    enabled: false  # Default to CPU-only
+    count: 1        # GPU count when enabled
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 8Gi
+    limits:
+      cpu: 2000m
+      memory: 10Gi
+```
+
+**Deployment template** with conditional GPU allocation:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker
+  namespace: {{ .Values.global.namespace }}
+spec:
+  replicas: {{ .Values.celeryWorker.replicas }}
+  selector:
+    matchLabels:
+      app: celery-worker
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+    spec:
+      containers:
+      - name: celery-worker
+        image: "{{ .Values.imageRegistry }}/celery-worker:{{ .Values.celeryWorker.image.tag }}"
+        env:
+        - name: CELERY_BROKER_URL
+          value: "redis://{{ include "pdf-to-podcast.redisHost" . }}:6379/0"
+        resources:
+          {{- toYaml .Values.celeryWorker.resources | nindent 10 }}
+          {{- if .Values.celeryWorker.gpu.enabled }}
+          limits:
+            nvidia.com/gpu: {{ .Values.celeryWorker.gpu.count }}
+          requests:
+            nvidia.com/gpu: {{ .Values.celeryWorker.gpu.count }}
+          {{- end }}
+      {{- if .Values.celeryWorker.gpu.enabled }}
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+      {{- end }}
+```
+
+**Key features:**
+1. **Conditional GPU resources**: `{{- if .Values.celeryWorker.gpu.enabled }}`
+2. **Conditional nodeSelector**: Only added when GPU enabled
+3. **Conditional tolerations**: Only added when GPU enabled
+4. **Base resources always present**: CPU/memory limits apply regardless
+
+### Enabling GPU at Deployment
+
+**Deploy with GPU enabled:**
+
+```bash
+helm install pdf-to-podcast ./helm \
+  --set celeryWorker.gpu.enabled=true \
+  --set celeryWorker.gpu.count=1
+```
+
+**Or create custom values file:**
+
+```yaml
+# values-gpu.yaml
+celeryWorker:
+  gpu:
+    enabled: true
+    count: 1
+  resources:
+    requests:
+      cpu: 2000m  # Increase CPU for GPU workload
+      memory: 16Gi
+    limits:
+      cpu: 4000m
+      memory: 32Gi
+```
+
+Deploy:
+
+```bash
+helm install pdf-to-podcast ./helm -f values-gpu.yaml
+```
+
+### Application-Level GPU Detection
+
+The application should detect GPU availability at runtime:
+
+**Python example:**
+
+```python
+import torch
+import os
+
+# Check if GPU is requested via Helm values
+GPU_ENABLED = os.getenv("GPU_ENABLED", "false").lower() == "true"
+
+# Detect GPU at runtime
+if GPU_ENABLED and torch.cuda.is_available():
+    device = "cuda"
+    print(f"GPU detected: {torch.cuda.get_device_name(0)}")
+else:
+    device = "cpu"
+    print("Running on CPU")
+
+# Use device in ML operations
+model = model.to(device)
+```
+
+**Environment variable injection** (add to deployment):
+
+```yaml
+containers:
+- name: celery-worker
+  env:
+  - name: GPU_ENABLED
+    value: {{ .Values.celeryWorker.gpu.enabled | quote }}
+```
+
+### Multi-Component Optional GPU
+
+For blueprints with multiple services that support GPU:
+
+```yaml
+# values.yaml
+celeryWorker:
+  gpu:
+    enabled: false
+    count: 1
+
+pdfProcessor:
+  gpu:
+    enabled: false
+    count: 1
+
+# Enable GPU for specific components
+helm install ... \
+  --set celeryWorker.gpu.enabled=true \
+  --set pdfProcessor.gpu.enabled=false
+```
+
+### Advantages of Optional GPU Pattern
+
+1. **Flexibility**: Same chart works for GPU and CPU-only clusters
+2. **Cost optimization**: Disable GPU in dev/test to save costs
+3. **Progressive rollout**: Start CPU-only, migrate to GPU later
+4. **Mixed deployments**: Some replicas on GPU, others on CPU (requires multiple releases)
+
+### Disadvantages
+
+1. **More complex templates**: Conditional logic increases complexity
+2. **Testing burden**: Must test both GPU-enabled and GPU-disabled paths
+3. **Performance variance**: CPU vs GPU performance may differ significantly
+4. **Feature drift**: GPU-only features may not work in CPU mode
+
+### Testing Both Modes
+
+**Test CPU mode:**
+
+```bash
+helm install pdf-to-podcast-cpu ./helm \
+  --set celeryWorker.gpu.enabled=false
+
+# Verify pod scheduled on non-GPU node
+oc get pod -l app=celery-worker -o wide
+```
+
+**Test GPU mode:**
+
+```bash
+helm install pdf-to-podcast-gpu ./helm \
+  --set celeryWorker.gpu.enabled=true
+
+# Verify pod scheduled on GPU node
+oc get pod -l app=celery-worker -o wide
+
+# Verify GPU accessible
+oc exec deployment/celery-worker -- nvidia-smi
+```
+
+## Choosing Between Approaches
+
+**Use Approach A (Required GPU)** when:
+- GPU is mandatory for functionality (no CPU fallback)
+- All production deployments have GPUs
+- Simplicity preferred over flexibility
+- Examples: NIM services, GPU-only ML models
+
+**Use Approach B (Optional GPU)** when:
+- GPU accelerates but isn't required
+- Supporting both GPU and CPU-only environments
+- Progressive GPU adoption (start CPU, add GPU later)
+- Cost optimization important (disable GPU in dev/test)
+- Examples: OCR, image processing, hybrid CPU/GPU workloads
+
+## Related Patterns
+
+- [[pod-affinity-rwo-pvc]] - Pod affinity for GPU workloads sharing storage
+- [[security-contexts-scc]] - Security contexts for GPU pods
+- [[helm-openshift-conditionals]] - Conditional Helm template patterns
