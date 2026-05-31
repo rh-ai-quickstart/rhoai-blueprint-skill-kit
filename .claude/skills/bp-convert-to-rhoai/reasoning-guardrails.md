@@ -58,6 +58,7 @@ As you reason about the conversion:
 **What to consider:**
 - OpenShift Routes vs Kubernetes Ingress
 - Service discovery and DNS
+- **In-cluster DNS name preservation** (Service names must match original hostnames)
 - Path-based routing strategies
 - WebSocket timeouts
 - TLS/SSL termination
@@ -65,11 +66,13 @@ As you reason about the conversion:
 **Key questions:**
 - Which services need external access (Routes)?
 - How should services find each other (Kubernetes DNS, service mesh)?
+- **Do OpenShift Service names match the original service names in docker-compose or hardcoded in application code (e.g., `redis:6379`, `milvus:19530`)? Changing these will break internal service discovery.**
 - Are there WebSocket connections needing longer timeouts?
 - Should traffic be path-based on single host or multiple hosts?
 
 **Where to look:**
-- docker-compose `ports` mappings
+- docker-compose `ports` mappings and service names
+- Application code for hardcoded hostnames/ports (connection strings, config files)
 - Service inter-dependencies
 - WebSocket or streaming services
 - Frontend/UI services
