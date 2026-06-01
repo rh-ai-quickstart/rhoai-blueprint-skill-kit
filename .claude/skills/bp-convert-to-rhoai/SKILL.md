@@ -84,65 +84,56 @@ Return JSON matching the schema from instructions.
 
 **Think like an engineer leveraging previous work**: Load knowledge files that match what you discovered about this blueprint. Don't load everything—that creates noise. Don't load too little—you'd miss proven patterns.
 
-#### 2.1 Score and Rank Knowledge Files
+#### 2.1 Retrieve Knowledge Summaries as XML
 
-Delegate to knowledge scorer subagent to identify most relevant patterns.
+Delegate to knowledge scorer subagent to score files, rank by relevance, and extract summaries from frontmatter.
 
 ```python
-KNOWLEDGE_RANKING_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "ranked_files": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string"},
-                    "category": {"type": "string"},
-                    "score": {"type": "number"},
-                    "matched_on": {"type": "array", "items": {"type": "string"}}
-                },
-                "required": ["path", "category", "score", "matched_on"]
-            }
-        }
-    },
-    "required": ["ranked_files"]
-}
-
 KB_DIR = ".claude/skills/bp-convert-to-rhoai/knowledge-base"
 
-ranked_knowledge = Agent(
-    description="Score knowledge base files",
+knowledge_summaries_xml = Agent(
+    description="Retrieve knowledge summaries",
     prompt=f"""
-Read and follow instructions from:
-.claude/skills/bp-convert-to-rhoai/subagents/knowledge-scorer-prompt.md
-
 Blueprint features: {blueprint_features}
 Knowledge base directory: {KB_DIR}
 
-Score knowledge files by relevance and return top-ranked files.
-Return JSON matching the schema from instructions.
-""",
-    schema=KNOWLEDGE_RANKING_SCHEMA
+Read and follow instructions from:
+.claude/skills/bp-convert-to-rhoai/subagents/knowledge-scorer-prompt.md
+"""
 )
 ```
 
-#### 2.2 Load Top-Ranked Knowledge
+#### 2.2 Apply Knowledge from Summaries
 
-Load the top 5-10 most relevant knowledge files identified by scorer:
-
-```python
-for file_info in ranked_knowledge['ranked_files'][:10]:
-    knowledge_content = Read(f"{KB_DIR}/{file_info['path']}")
-    # Apply patterns from loaded knowledge during reasoning (Phase 3)
+**The subagent returns XML** with this structure:
+```xml
+<knowledge-base>
+  <file>
+    <name>component-name</name>
+    <path>category/filename.md</path>
+    <category>component|deployment-type|resource-pattern|architecture|integration</category>
+    <summary>Proven pattern summary from frontmatter...</summary>
+  </file>
+  ...
+</knowledge-base>
 ```
 
-#### 2.3 On-Demand Retrieval
+The XML contains summaries extracted from proven conversion patterns. **You now have the conversion experience of engineers who successfully converted previous blueprints.**
 
-During reasoning, if questions arise about components not initially loaded:
-- Check if a relevant knowledge file exists in ranked list
-- Load it if it applies to this blueprint
-- Apply the pattern
+**What the summaries provide:**
+- When to use which approach (e.g., "Use Approach A when original uses Helm... use Approach B when original uses docker-compose...")
+- Critical configuration changes required (e.g., "pod-level runAsNonRoot: true + container allowPrivilegeEscalation: false + capabilities drop ALL")
+- Common gotchas and their solutions (e.g., "chmod fails in restricted-v2 SCC - rely on automatic UID/GID assignment")
+- Security context requirements for OpenShift
+- Storage and resource allocation patterns
+
+**Use this loaded knowledge during reasoning (Phase 3)** to make informed conversion decisions.
+
+#### 2.3 Fetch Additional Details When Needed
+
+Each `<file>` entry includes a `<path>` field pointing to the full knowledge file. **If a summary indicates a relevant pattern but you need more detail** (exact YAML code, step-by-step instructions, detailed approach comparison), read from that file.
+
+**Guiding principle**: Summaries give you the "what" and "when" - full files give you the "how" with exact implementation. Fetch details when summary triggers a question that needs implementation specifics to answer.
 
 ---
 

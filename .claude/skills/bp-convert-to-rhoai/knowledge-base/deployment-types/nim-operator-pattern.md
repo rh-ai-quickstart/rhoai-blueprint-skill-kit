@@ -4,6 +4,8 @@ components: [nim-llm, nemo-embedding, nemo-rerank, nim-bionemo]
 deployment_types: [helm]
 resource_types: [gpu, storage]
 architecture: []
+description: "NIM Operator integration pattern for deploying NVIDIA Inference Microservices on OpenShift"
+summary: "Automates NIM deployment on OpenShift using NIM Operator for PVC-based model caching instead of manual Deployments, required because OpenShift restricts hostPath volumes and benefits from automated model download/lifecycle management via NIMCache resources. Use when `apps.nvidia.com/v1alpha1` API exists (check via `.Capabilities.APIVersions.Has`), gated by `{{- if and (.Capabilities.APIVersions.Has \"apps.nvidia.com/v1alpha1\") (eq $nim.enabled true) }}` to support both Operator and non-Operator clusters. NIMCache creates PVC with `helm.sh/resource-policy: keep` (survives uninstall/upgrades), NIMService references cache via `storage.nimCache.name: <cache-name>`, disable original subchart Deployments (`nim-llm.enabled: false`), size PVCs correctly (50GB embedding/rerank, 100GB LLM, 2TB BioNeMo—immutable after creation). Post-install manual step required (`oc secrets link nim-cache-sa ngc-secret --for=pull`) because Operator creates separate ServiceAccount not auto-linked to NGC secret causing ImagePullBackOff; tolerations MUST be on BOTH NIMCache and NIMService or cache Jobs stuck Pending on tainted GPU nodes; startup probes need `failureThreshold: 720` for 6-hour TensorRT compilation (RFDiffusion first run); set `TOKENIZERS_PARALLELISM=false` env var to prevent HuggingFace tokenizer race condition crashes."
 source_examples:
   - blueprint: "video-search-and-summarization"
     source_repo: "https://github.com/NVIDIA-AI-Blueprints/video-search-and-summarization"

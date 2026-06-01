@@ -1,6 +1,7 @@
 ---
 name: postgresql-on-rhoai
 description: PostgreSQL database deployment on RHOAI using Bitnami image with nullable security contexts
+summary: "Solves persistent database storage for job state, checkpoints, and agent memory in NVIDIA blueprints running on RHOAI. Use Bitnami PostgreSQL with nullable security contexts for standard deployments; use operators (Crunchy/Zalando) when HA/backups/monitoring needed; use managed services (RDS/Cloud SQL) for cloud deployments. Set `podSecurityContext: null` and `securityContext: null` in OpenShift overlay because restricted-v2 SCC auto-assigns UIDs from namespace range—explicit fsGroup/runAsUser causes permission conflicts. Init containers fail without `pg_isready` retry loops, PVC stuck Pending without explicit storageClassName, and permission denied errors occur if security contexts not nulled in overlay."
 metadata:
   type: component
 components: [postgresql, postgres, database]

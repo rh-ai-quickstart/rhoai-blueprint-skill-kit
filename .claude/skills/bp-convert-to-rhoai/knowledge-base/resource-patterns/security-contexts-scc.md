@@ -4,6 +4,7 @@ components: []
 deployment_types: [helm]
 resource_types: [security-context]
 architecture: []
+summary: "OpenShift's restricted-v2 SCC blocks NVIDIA Blueprint components requiring runAsUser: 0 or specific UIDs, and large NIM PVCs (50GB-2TB) cause SELinux relabeling timeouts that prevent pod startup. Use Approach A (custom SCC) when PVCs exceed 50GB or contain millions of files requiring seLinuxContext: RunAsAny to skip recursive relabeling; use Approach B (anyuid RoleBinding to system:openshift:scc:anyuid) for infrastructure services like Redis/MinIO without large PVCs. Approach A requires runAsUser: RunAsAny + seLinuxContext: RunAsAny + priority 10-20 + RoleBinding; Approach B uses single RoleBinding with {{ .Release.Name }}-prefixed service accounts except nim-cache-sa. seLinuxContext: RunAsAny is critical for BioNeMo multi-TB PVCs with millions of genomic database files (AlphaFold2 2TB) that otherwise timeout during relabeling; verify SCC assignment via oc get pod -o yaml | grep \"openshift.io/scc\"."
 source_examples:
   - blueprint: "video-search-and-summarization"
     source_repo: "https://github.com/NVIDIA-AI-Blueprints/video-search-and-summarization"

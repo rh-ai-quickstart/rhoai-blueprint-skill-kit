@@ -10,6 +10,7 @@ source_examples:
     fork_repo: "https://github.com/rh-ai-quickstart/nvidia-demo"
     notes: "CrewAI agentic workflow with OPENSHIFT_MODE switching between NVIDIA API Catalog and self-hosted NIMs"
     approach: "A"
+summary: "Adapts CrewAI agentic blueprints from NVIDIA API Catalog to self-hosted NIMs on RHOAI using OPENSHIFT_MODE env var toggle (use when notebook-based and need model hosting control vs. API Catalog convenience). Change provider prefix from nvidia_nim/model to openai/model with base_url=NIM_endpoint/v1, override agent YAML LLM configs via override_agent_llm_config() BEFORE agent creation, switch embeddings from nvidia to openai provider with explicit passage (indexing) then query (searching) mode switching. Embedding mode must switch AFTER agent creation because self-hosted NIMs lack auto mode detection (passage→query transition required or search quality degrades), model names must exactly match deployed NIM IDs (mismatch causes 404), endpoint URLs must end /v1 (missing causes connection errors). Agent config override must happen before Agent() instantiation or override is ignored, embedding mode switching only required in RHOAI mode (API Catalog handles automatically)."
 ---
 
 # CrewAI on RHOAI

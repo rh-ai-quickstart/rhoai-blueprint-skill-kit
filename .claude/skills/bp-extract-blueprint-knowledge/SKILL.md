@@ -440,6 +440,60 @@ Include patterns that apply across multiple components.
 
 `$KNOWLEDGE_BASE/integrations/<service-a>-<service-b>-integration.md`
 
+### Step 7.5: Generate Knowledge File Summaries
+
+For each knowledge file created or modified in Step 7, generate summary and add to frontmatter.
+
+**Track files throughout Step 7:**
+
+```bash
+CREATED_FILES=()  # New knowledge files
+UPDATED_FILES=()  # Files where approach was added
+```
+
+**Generate summaries:**
+
+```python
+SUMMARY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "file": {"type": "string"},
+        "success": {"type": "boolean"},
+        "error": {"type": "string"}
+    },
+    "required": ["file", "success"]
+}
+
+all_files = CREATED_FILES + UPDATED_FILES
+
+for kb_file in all_files:
+    result = Agent(
+        description=f"Generate summary for {kb_file}",
+        prompt=f"""
+Knowledge file to summarize: {kb_file}
+
+Read and follow instructions from:
+.claude/skills/bp-extract-blueprint-knowledge/subagents/summary-generator-prompt.md
+""",
+        schema=SUMMARY_SCHEMA
+    )
+    
+    # Retry once on failure
+    if not result["success"]:
+        result = Agent(
+            description=f"Retry summary for {kb_file}",
+            prompt=f"""
+Knowledge file to summarize: {kb_file}
+
+Read and follow instructions from:
+.claude/skills/bp-extract-blueprint-knowledge/subagents/summary-generator-prompt.md
+""",
+            schema=SUMMARY_SCHEMA
+        )
+```
+
+---
+
 ### Step 8: Generate Summary Report
 
 Create a summary document showing what was extracted:

@@ -1,6 +1,7 @@
 ---
 name: minio-on-rhoai
 description: MinIO object storage deployment on RHOAI using Red Hat AI Quickstart subchart
+summary: "Deploys MinIO as Helm subchart for S3-compatible storage of ML artifacts, audio files, and PDFs in RHOAI blueprints. Use Red Hat AI Quickstart certified subchart (repository: https://rh-ai-quickstart.github.io/ai-architecture-charts) over standalone MinIO for OpenShift SCC compliance and maintained RHOAI ecosystem integration. Chart.yaml adds dependency with condition: minio.enabled, values.yaml configures volumeClaimTemplates for 50Gi persistent storage, applications connect to minio:9000 (S3 API port) using secretKeyRef for credentials. Applications must create buckets programmatically on startup (minio_client.make_bucket() if not exists) because subchart does not auto-create buckets, port 9000 is S3 API while 9090 is console UI (common confusion), and default minioadmin credentials must be overridden in production."
 metadata:
   type: component
 components: [minio]

@@ -4,6 +4,7 @@ components: [isaac-lab, isaac-sim]
 deployment_types: [rhoai-notebook]
 resource_types: [gpu, storage]
 architecture: [notebook-based]
+summary: "Isaac Lab robotics simulation requires headless GPU rendering on RHOAI because no physical display exists, necessitating Xvfb virtual framebuffer and runtime PVC initialization. Deploy as custom RHOAI notebook image (not Helm) when blueprint requires GPU-accelerated simulation without physical display; use OPENSHIFT_MODE=true to conditionally enable RHOAI-specific behavior. Set DISPLAY=:99 and launch Xvfb in launch.sh, copy notebooks from /workspace/ to /opt/app-root/src on first startup (PVC mount overwrites build-time content), chmod -R g+w /isaac-sim/kit/{cache,data,logs} for group 0 write access. Disable renderer.capture extension in OpenShift mode (fails with Xvfb), ensure all Isaac Sim writable directories get group write permissions at build time, store static files outside PVC mount path for runtime copy."
 source_examples:
   - blueprint: "synthetic-manipulation-motion-generation"
     source_repo: "https://github.com/NVIDIA-Omniverse-blueprints/synthetic-manipulation-motion-generation"

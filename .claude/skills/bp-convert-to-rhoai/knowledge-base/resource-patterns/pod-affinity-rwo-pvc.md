@@ -1,6 +1,7 @@
 ---
 name: pod-affinity-rwo-pvc
 description: Pod affinity pattern for sharing ReadWriteOnce PVCs between multiple pods on the same node
+summary: "Solves the \"Multi-Attach error\" when multiple pods need to share a ReadWriteOnce PVC that can only attach to one node, preventing pods from mounting the same PVC across different nodes. Use for temp/ephemeral data sharing when RWX storage is unavailable or expensive; skip if pods require independent horizontal scaling or HA across nodes (both scale limitations). Add matching custom label (e.g., `pdf-temp-volume: shared`) to all sharing pods, then configure `podAffinity.requiredDuringSchedulingIgnoredDuringExecution` with `labelSelector` matching that label and `topologyKey: kubernetes.io/hostname` to force co-location. Replicas limited to 1 per deployment (cannot scale independently), node failure kills all affinity-linked pods, pods stuck pending if node lacks resources to fit all pods, and file permission conflicts between different UIDs require fsGroup (leave empty on OpenShift for auto-range assignment from namespace)."
 metadata:
   type: resource-pattern
 components: []

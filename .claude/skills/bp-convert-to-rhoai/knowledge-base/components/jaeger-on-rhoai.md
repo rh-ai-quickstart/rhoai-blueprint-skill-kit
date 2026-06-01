@@ -1,6 +1,7 @@
 ---
 name: jaeger-on-rhoai
 description: Jaeger distributed tracing on RHOAI using official Jaeger Helm subchart with OpenShift security contexts
+summary: "Deploys Jaeger distributed tracing on OpenShift using official Helm subchart as dependency, configured for restricted SCC compliance with ephemeral memory storage. Use all-in-one mode with memory storage for dev/test or moderate scale (<1000 traces/min); switch to distributed deployment with Elasticsearch backend for high scale (>1000 traces/min); migrate to Red Hat OpenShift distributed tracing platform for enterprise production with support and monitoring. Leave podSecurityContext fields (runAsUser, runAsGroup, fsGroup) empty because OpenShift SCC admission injects UIDs from namespace range and explicit values cause pod rejection; set `allowPrivilegeEscalation: false`, drop ALL capabilities, `seccompProfile: RuntimeDefault`; applications send traces to `http://{{ .Release.Name }}-jaeger-query:4318`. Memory storage is ephemeral (traces lost on restart) and causes pod eviction under high traffic; explicit UID/GID values conflict with namespace ranges; external Route exposes traces without authentication (disable in production via `jaegerRoute.enabled: false`)."
 metadata:
   type: component
 components: [jaeger]

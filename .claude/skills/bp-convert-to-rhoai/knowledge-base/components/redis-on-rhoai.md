@@ -1,6 +1,7 @@
 ---
 name: redis-on-rhoai
 description: Redis deployment on RHOAI with OpenShift-compatible security contexts and init containers
+summary: "Solves Redis deployment on OpenShift with restricted SCC compliance while maintaining standard Kubernetes compatibility via conditional toggles or standalone deployments. Use Approach A (conditional {{- if .Values.openshift.enabled }} in existing Helm chart) when original uses Helm and needs unified deployment; use Approach B (standalone openshift/ directory with hardcoded security contexts) when original uses docker-compose and separation from NVIDIA's method is preferred. Critical changes: pod-level runAsNonRoot: true + container allowPrivilegeEscalation: false + capabilities drop ALL; OpenShift init uses UBI minimal without chmod because restricted SCC blocks runtime permission changes, standard K8s uses busybox with chmod 755. Common gotchas: chmod commands fail in restricted-v2 SCC (rely on OpenShift's automatic namespace UID/GID assignment instead); emptyDir volumes lose data on pod restart which is acceptable for ephemeral Celery task queues but requires PersistentVolumeClaim for production persistence."
 metadata:
   type: component
 components: [redis]

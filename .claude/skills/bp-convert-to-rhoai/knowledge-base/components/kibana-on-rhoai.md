@@ -1,6 +1,7 @@
 ---
 name: kibana-on-rhoai
 description: Kibana deployment on RHOAI with OpenShift Routes and security contexts
+summary: "Solves external access to Kibana visualization UI on OpenShift with TLS encryption while preserving standard Kubernetes compatibility through conditional service type switching. Use ClusterIP + OpenShift Route when .Values.openshift.enabled=true because Routes provide external access with TLS termination at the router; use NodePort on standard Kubernetes for direct external access without ingress. Service type helper {{- if .Values.openshift.enabled -}}ClusterIP{{- else -}}NodePort{{- end }} switches backend, while Route requires quad-conditional {{- if and .Values.openshift.enabled .Values.openshift.routes.enabled .Values.openshift.routes.kibana.enabled .Values.kibana.enabled }} to prevent creation when disabled. Auto-generated Route hostnames are unpredictable for production (specify explicit host values), and edge TLS termination means Kibana backend runs HTTP-only while router handles HTTPS."
 metadata:
   type: component
 components: [kibana]

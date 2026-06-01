@@ -97,29 +97,43 @@ Return top-scored files (typically 5-10 most relevant).
 
 ## Output
 
-Return ranked knowledge files as JSON matching this schema:
+Return ranked knowledge files as XML containing file metadata and summaries extracted directly from each file's frontmatter. This XML will be loaded into the main agent's context to provide conversion experience without flooding the context window.
 
-```json
-{
-  "ranked_files": [
-    {
-      "path": "components/redis-on-rhoai.md",
-      "category": "component",
-      "score": 18,
-      "matched_on": ["redis", "helm", "storage"]
-    },
-    {
-      "path": "components/triton-on-rhoai.md",
-      "category": "component",
-      "score": 23,
-      "matched_on": ["triton", "helm", "gpu", "storage"]
-    }
-  ]
-}
+### XML Format
+
+```xml
+<knowledge-base>
+  <file>
+    <name>[value from frontmatter name: field]</name>
+    <path>[relative path from KB directory, e.g., components/redis-on-rhoai.md]</path>
+    <category>[component|deployment-type|resource-pattern|architecture|integration]</category>
+    <summary>[value from frontmatter summary: field - copy exactly, escape XML chars]</summary>
+  </file>
+  ...
+</knowledge-base>
 ```
 
+### Instructions for XML Generation
+
+1. **Score and rank files** using the scoring criteria above (component +10, deployment +5, resource +3, architecture +5)
+
+2. **For each file with score > 0**, read its frontmatter and extract:
+   ```bash
+   # Extract frontmatter only
+   awk 'n==2{exit} /^---$/{n++} n' <knowledge-file.md>
+   ```
+
+3. **Copy frontmatter fields directly into XML**:
+   - `<name>`: Copy from `name:` field
+   - `<path>`: Relative path from knowledge-base directory
+   - `<category>`: Derive from directory (components/ → component, deployment-types/ → deployment-type, etc.)
+   - `<summary>`: Copy from `summary:` field exactly as written (escape `&` → `&amp;`, `<` → `&lt;`, `>` → `&gt;`)
+
+4. **Sort XML entries by score descending** (most relevant first)
+
 **Important:** 
-- Return ONLY the JSON
-- Include files with score > 0
-- Sort by score descending
-- Limit to top 15 files maximum
+- Return ONLY the XML (no other text)
+- Include ALL files with score > 0 (no limit)
+- Do NOT generate or paraphrase summaries - copy them exactly from frontmatter
+- Escape XML special characters in summaries
+- Do NOT include score in XML output (only use for sorting)

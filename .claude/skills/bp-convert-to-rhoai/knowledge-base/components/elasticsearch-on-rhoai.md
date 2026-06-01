@@ -1,6 +1,7 @@
 ---
 name: elasticsearch-on-rhoai
 description: Elasticsearch deployment on RHOAI with OpenShift-compatible security contexts
+summary: "This pattern solves Elasticsearch deployment on RHOAI with restricted SCC compliance by using conditional Helm templates that apply OpenShift-specific security contexts only when `openshift.enabled=true`, avoiding init containers entirely. Use this approach when Elasticsearch runs in single-node development mode without persistent storage; unlike MongoDB/Redis, Elasticsearch does not require data folder pre-creation or fsGroup ownership fixes because it uses container filesystem for ephemeral data. Critical changes include adding `{{- if .Values.openshift.enabled }}` conditionals around pod/container securityContext blocks that reference helper functions for `runAsNonRoot: true`, `allowPrivilegeEscalation: false`, and `capabilities.drop: [ALL]` to satisfy restricted SCC. Common failure modes include Elasticsearch crashing without cluster-level `vm.max_map_count >= 262144` setting (requires `oc debug node` access) and OOMKilled errors when `ES_JAVA_OPTS` heap size exceeds 50% of container memory limits."
 metadata:
   type: component
 components: [elasticsearch]

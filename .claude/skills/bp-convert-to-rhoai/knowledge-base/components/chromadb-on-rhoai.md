@@ -10,6 +10,7 @@ source_examples:
     fork_repo: "https://github.com/rh-ai-quickstart/nvidia-demo"
     notes: "SQLite compatibility patch for ChromaDB in RHOAI workbenches"
     approach: "A"
+summary: "ChromaDB requires SQLite 3.35.0+ but RHOAI workbenches ship with older OS-level versions causing \"SQLite version required\" errors at runtime. Use this pattern when deploying ChromaDB in RHOAI Jupyter notebooks; skip for docker-compose deployments where system SQLite meets requirements. Add pysqlite3-binary>=0.5.4 dependency and inject module substitution before any imports: if OPENSHIFT_MODE: sys.modules['sqlite3'] = sys.modules.pop(__import__('pysqlite3')). Module substitution must precede ALL ChromaDB imports or dependent packages (like crewai_tools); violation requires kernel restart because Python caches imported modules."
 ---
 
 # ChromaDB on RHOAI

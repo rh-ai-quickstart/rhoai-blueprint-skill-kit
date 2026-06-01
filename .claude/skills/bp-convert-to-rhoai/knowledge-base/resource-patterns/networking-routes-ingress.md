@@ -4,6 +4,7 @@ components: []
 deployment_types: [helm]
 resource_types: [networking]
 architecture: []
+summary: "OpenShift Routes replace kubectl port-forward and Kubernetes Ingress patterns to provide persistent, production-grade external access to blueprint web UIs and APIs with integrated TLS termination. Use edge termination (TLS at router, HTTP to backend) for most blueprints since backends are HTTP-only; use passthrough when backend already handles TLS; for long-running endpoints (RAG, inference), add haproxy.router.openshift.io/timeout annotation (default 30s causes timeouts). Create Route with `{{- if .Values.openshift.route.enabled }}` gate, reference Service port by name not number (`targetPort: webui`), leave host empty for auto-generation (`<route>-<ns>.<cluster-domain>`), enable insecureEdgeTerminationPolicy: Redirect to force HTTPS. Common failures: HTTP 503 when Service selector mismatches pod labels or pods not ready; garbled content when termination type mismatches backend protocol (edge for HTTP, passthrough for HTTPS); \"host already claimed\" when duplicate hostname exists across namespaces."
 source_examples:
   - blueprint: "video-search-and-summarization"
     source_repo: "https://github.com/NVIDIA-AI-Blueprints/video-search-and-summarization"

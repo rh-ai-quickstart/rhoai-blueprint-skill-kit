@@ -10,6 +10,7 @@ source_examples:
     fork_repo: "https://github.com/rh-ai-quickstart/synthetic-manipulation-motion-generation"
     notes: "Demonstrates runtime PVC initialization pattern for RHOAI notebooks"
     approach: "A"
+summary: "RHOAI mounts a PVC at /opt/app-root/src which replaces all build-time content at that path, requiring a pattern where files are stored outside the PVC mount at build time and copied to the PVC at runtime. Store files in /workspace/ during docker build, then copy to /opt/app-root/src in the launcher script with a marker file check (if [ ! -f /opt/app-root/src/main.ipynb ]) to preserve user modifications across pod restarts. Set chgrp -R 0 /workspace && chmod -R g+rx /workspace in Dockerfile because OpenShift runs as random UID with group 0, making group read access mandatory for runtime copy operations; use mkdir -p for directories on every startup since it's idempotent. Common failures: omitting marker file check overwrites user changes on every restart, missing group 0 permissions causes \"permission denied\" during copy, embedding large datasets (>1GB) in images bloats size instead use object storage or separate PVCs."
 ---
 
 # RHOAI PVC Initialization Pattern

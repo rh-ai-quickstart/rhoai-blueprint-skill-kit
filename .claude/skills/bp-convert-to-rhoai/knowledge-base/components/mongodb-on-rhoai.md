@@ -1,6 +1,7 @@
 ---
 name: mongodb-on-rhoai
 description: MongoDB deployment on RHOAI with OpenShift-compatible security contexts and init containers
+summary: "MongoDB deployment with Helm conditionals (`.Values.openshift.enabled`) solves restricted SCC compliance where runtime permission changes are blocked. Use when deploying MongoDB as metadata storage across both Kubernetes and OpenShift environments with a single Helm chart instead of maintaining separate manifests. Critical YAML adds `{{- if .Values.openshift.enabled }} securityContext: runAsNonRoot: true, allowPrivilegeEscalation: false, capabilities.drop: [ALL] {{- end }}` at pod/container levels and switches init container from busybox with chmod to UBI minimal with mkdir-only because restricted SCC blocks chmod at runtime. Gotchas include never setting fsGroup explicitly (causes SCC violations since OpenShift auto-assigns from namespace UID/GID range) and avoiding chmod commands in init containers under restricted-v2 SCC."
 metadata:
   type: component
 components: [mongodb]

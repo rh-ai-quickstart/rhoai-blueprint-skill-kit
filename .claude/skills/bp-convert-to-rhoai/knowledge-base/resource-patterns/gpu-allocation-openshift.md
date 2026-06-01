@@ -4,6 +4,7 @@ components: []
 deployment_types: [helm]
 resource_types: [gpu]
 architecture: []
+summary: "OpenShift GPU nodes use nvidia.com/gpu:NoSchedule taints to prevent non-GPU workloads from scheduling on expensive GPU hardware, requiring both resource allocation and tolerations for GPU pods. Use Approach A (required GPU: static nvidia.com/gpu: 1 limits/requests + tolerations) for NIM services and mandatory inference workloads; use Approach B (optional GPU: {{- if .Values.gpu.enabled }} conditional blocks for resources/nodeSelector/tolerations) when CPU fallback exists for dev/test cost optimization or progressive GPU adoption. Set nvidia.com/gpu requests equal to limits (GPUs are whole-unit resources, non-fractional unless using MIG) and use tolerations with operator: Exists for portability across cluster-specific taint values. Common failures: missing tolerations causes \"0/N untolerated taint nvidia.com/gpu\" (add toleration matching oc describe node output), insufficient GPUs causes \"0/N Insufficient nvidia.com/gpu\" (check allocated resources with oc describe nodes), and cluster-specific custom taints not documented in values comments (verify actual taints and add to values-openshift.yaml)."
 source_examples:
   - blueprint: "video-search-and-summarization"
     source_repo: "https://github.com/NVIDIA-AI-Blueprints/video-search-and-summarization"

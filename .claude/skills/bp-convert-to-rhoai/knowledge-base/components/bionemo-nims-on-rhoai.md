@@ -9,6 +9,7 @@ source_examples:
     source_repo: "https://github.com/NVIDIA-BioNeMo-blueprints/generative-protein-binder-design"
     fork_repo: "https://github.com/rh-ai-quickstart/generative-protein-binder-design"
     notes: "Complete BioNeMo NIM deployment with AlphaFold2, RFDiffusion, ProteinMPNN, and AlphaFold2-Multimer"
+summary: "Solves deployment of NVIDIA BioNeMo NIMs (AlphaFold2, RFDiffusion, ProteinMPNN) on RHOAI with extreme storage (100GB-2TB PVCs), 6-hour TensorRT compilation delays, and millions of genomic database files requiring specialized SCC handling. Use for protein structure/design workflows with NIM Operator; apply custom SCC pattern with seLinuxContext: RunAsAny for 2TB NIMs (AlphaFold2/AlphaFold2-Multimer) to prevent recursive relabeling timeout, standard restricted SCC for smaller NIMs (ProteinMPNN: 100GB). Set startupProbe.failureThreshold: 720 (6 hours) for RFDiffusion because TensorRT compilation blocks health endpoint until complete; add helm.sh/resource-policy: keep to NIMCache to preserve database downloads across Helm upgrades; apply GPU tolerations to both NIMCache and NIMService for scheduling. AlphaFold2 pods stuck in ContainerCreating without RunAsAny SCC due to millions-of-files relabeling; RFDiffusion loses TensorRT cache on pod rollout (ephemeral storage) forcing 2-6 hour recompilation; multi-NIM pipelines require 4+ GPUs and ~4.5TB total storage with longest NIM determining overall readiness."
 ---
 
 # BioNeMo NIMs on RHOAI
