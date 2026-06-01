@@ -47,48 +47,36 @@ User provides a **local path** to an NVIDIA Blueprint directory (not a GitHub UR
 
 ### Phase 1: Blueprint Analysis
 
-#### 1.1 Understand Structure
-
-```bash
-cd <blueprint-directory>
-
-# Find deployment artifacts
-find . -maxdepth 3 \( -name "docker-compose.yaml" -o -name "docker-compose.yml" -o -name "Chart.yaml" -o -name "*.ipynb" \) | head -10
-ls -la
-test -f README.md && echo "Has README"
-```
-
-**Extract blueprint features:**
-- Primary deployment method (Helm, docker-compose, notebooks, other)
-- Architecture (RAG pipeline, agentic workflow, inference-only)
-- Components/services identified from:
-  - docker-compose: `yq '.services | keys' docker-compose.yaml`
-  - Helm: `yq '.images | keys' values.yaml`
-  - Notebooks: `find . -name "*.ipynb"`
-- Resource requirements:
-  - GPU: `grep -r "nvidia\|gpu" . --include="*.yaml"`
-  - Storage: `grep -r "volumes:" docker-compose.yaml`
-  - Networking: `grep -r "ports:" docker-compose.yaml`
-
-#### 1.2 Create Feature Vector
+Delegate to blueprint analyzer subagent to extract feature vector.
 
 ```python
-blueprint_features = {
-    'components': [<list-of-identified-components>],
-    'architecture': '<inferred-architecture>',
-    'deployment_types': [<helm|docker-compose|notebook|oc-apply>],
-    'resource_types_needed': [<gpu|storage|networking|security-context>]
+BLUEPRINT_FEATURES_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "components": {"type": "array", "items": {"type": "string"}},
+        "architecture": {"type": "string"},
+        "deployment_types": {"type": "array", "items": {"type": "string"}},
+        "resource_types_needed": {"type": "array", "items": {"type": "string"}}
+    },
+    "required": ["components", "architecture", "deployment_types", "resource_types_needed"]
 }
+
+blueprint_features = Agent(
+    description="Analyze blueprint structure",
+    prompt=f"""
+Read and follow instructions from:
+.claude/skills/bp-convert-to-rhoai/subagents/blueprint-analyzer-prompt.md
+
+Blueprint directory: {blueprint_dir}
+
+Navigate to directory, analyze structure, and extract feature vector.
+Return JSON matching the schema from instructions.
+""",
+    schema=BLUEPRINT_FEATURES_SCHEMA
+)
 ```
 
-**Component types to identify:**
-- Inference servers: Triton, vLLM, TensorRT-LLM
-- NIM models: llama, mistral, embed-qa, nemo-retriever
-- Vector DBs: Milvus, Qdrant, Weaviate, pgvector
-- Caches: Redis, Memcached
-- Databases: PostgreSQL, MySQL, MongoDB
-- Storage: MinIO, S3
-- Other services
+**Output**: `blueprint_features` dict with components, architecture, deployment_types, resource_types_needed
 
 ---
 
@@ -96,54 +84,63 @@ blueprint_features = {
 
 **Think like an engineer leveraging previous work**: Load knowledge files that match what you discovered about this blueprint. Don't load everything—that creates noise. Don't load too little—you'd miss proven patterns.
 
-#### 2.1 Scan Knowledge Base
+#### 2.1 Score and Rank Knowledge Files
 
-```bash
-KB_DIR=".claude/skills/bp-convert-to-rhoai/knowledge-base"
-find "$KB_DIR" -name "*.md" -not -name "README.md" -type f
+Delegate to knowledge scorer subagent to identify most relevant patterns.
+
+```python
+KNOWLEDGE_RANKING_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "ranked_files": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "category": {"type": "string"},
+                    "score": {"type": "number"},
+                    "matched_on": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["path", "category", "score", "matched_on"]
+            }
+        }
+    },
+    "required": ["ranked_files"]
+}
+
+KB_DIR = ".claude/skills/bp-convert-to-rhoai/knowledge-base"
+
+ranked_knowledge = Agent(
+    description="Score knowledge base files",
+    prompt=f"""
+Read and follow instructions from:
+.claude/skills/bp-convert-to-rhoai/subagents/knowledge-scorer-prompt.md
+
+Blueprint features: {blueprint_features}
+Knowledge base directory: {KB_DIR}
+
+Score knowledge files by relevance and return top-ranked files.
+Return JSON matching the schema from instructions.
+""",
+    schema=KNOWLEDGE_RANKING_SCHEMA
+)
 ```
 
-#### 2.2 Load Relevant Knowledge
+#### 2.2 Load Top-Ranked Knowledge
 
-**Check frontmatter for relevance**: Each knowledge file has frontmatter with tags (`components`, `architecture`, `deployment_types`, `resource_types`, `source_examples`). 
+Load the top 5-10 most relevant knowledge files identified by scorer:
 
-Extract frontmatter efficiently (without reading full file):
-```bash
-# Extract only frontmatter
-awk 'n==2{exit} /^---$/{n++} n' <knowledge-file.md>
+```python
+for file_info in ranked_knowledge['ranked_files'][:10]:
+    knowledge_content = Read(f"{KB_DIR}/{file_info['path']}")
+    # Apply patterns from loaded knowledge during reasoning (Phase 3)
 ```
-
-Use frontmatter to assess which files are relevant before loading full content.
-
-Based on your blueprint analysis, load knowledge files across these dimensions:
-
-**Components** (highest priority): Files for the specific components you identified
-- Example: Blueprint uses Triton, Milvus, Redis → load those component files
-- `knowledge-base/components/triton-on-rhoai.md`
-- `knowledge-base/components/milvus-on-rhoai.md`
-- `knowledge-base/components/redis-on-rhoai.md`
-
-**Deployment types**: Files matching the deployment structure
-- Example: Helm-based blueprint → load `knowledge-base/deployment-types/helm-conditional-support.md`
-
-**Architecture**: If there's a clear pattern match
-- Example: RAG pipeline → load `knowledge-base/architectures/rag-pipeline-pattern.md`
-
-**Resource patterns**: Files for specific concerns you identified
-- Example: GPU needed → load `knowledge-base/resource-patterns/gpu-allocation-openshift.md`
-- Example: Storage volumes → load `knowledge-base/resource-patterns/storage-pvc-patterns.md`
-
-**Integration patterns**: If multiple components need special integration
-- Example: Triton + Milvus → check `knowledge-base/integrations/triton-milvus-integration.md`
-
-**Guideline**: Load 5-10 most relevant files initially. You can retrieve more during reasoning if specific questions emerge.
-
-**Important**: Do NOT load all knowledge files upfront—only what's relevant to THIS blueprint.
 
 #### 2.3 On-Demand Retrieval
 
 During reasoning, if questions arise about components not initially loaded:
-- Check if a relevant knowledge file exists
+- Check if a relevant knowledge file exists in ranked list
 - Load it if it applies to this blueprint
 - Apply the pattern
 
@@ -405,31 +402,45 @@ Based on blueprint structure:
 
 ### Phase 6: Generate Documentation
 
-**Read `output-templates.md` before continuing** for TEST-PLAN.md and RHOAI-CONVERSION.md templates.
+Delegate to documentation generator subagent to create TEST-PLAN.md, RHOAI-CONVERSION.md, and update README.md.
 
-#### 6.1 Create TEST-PLAN.md
+```python
+DOCUMENTATION_SUMMARY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "files_created": {"type": "array", "items": {"type": "string"}},
+        "files_modified": {"type": "array", "items": {"type": "string"}},
+        "test_plan_sections": {"type": "array", "items": {"type": "string"}},
+        "conversion_doc_sections": {"type": "array", "items": {"type": "string"}}
+    },
+    "required": ["files_created", "files_modified", "test_plan_sections", "conversion_doc_sections"]
+}
 
-Use TEST-PLAN.md template from `output-templates.md`, customizing:
-- Deployment steps (Helm vs oc apply)
-- RHOAI mode toggle method (openshiftMode vs OPENSHIFT_MODE)
-- Component-specific tests based on blueprint
-- Prerequisites specific to this blueprint
+doc_summary = Agent(
+    description="Generate conversion documentation",
+    prompt=f"""
+Read and follow instructions from:
+.claude/skills/bp-convert-to-rhoai/subagents/documentation-generator-prompt.md
 
-#### 6.2 Create RHOAI-CONVERSION.md
+**Documentation context:**
+- Blueprint directory: {blueprint_dir}
+- Deployment method: {deployment_method}
+- RHOAI mode toggle: {rhoai_mode_toggle}
+- Components: {components}
+- Patterns applied: {patterns_applied}
+- User decisions: {user_decisions}
+- Modified files: {modified_files}
+- Created files: {created_files}
+- Knowledge sources: {knowledge_sources}
 
-Use RHOAI-CONVERSION.md template from `output-templates.md`, documenting:
-- What changed and why
-- Which knowledge sources were applied
-- User decisions made during conversion
-- How to toggle RHOAI mode for this deployment method
-- Files modified and created
+Generate TEST-PLAN.md, RHOAI-CONVERSION.md, and update README.md.
+Return summary JSON matching schema from instructions.
+""",
+    schema=DOCUMENTATION_SUMMARY_SCHEMA
+)
+```
 
-#### 6.3 Update README.md
-
-Add RHOAI deployment section showing:
-- How to enable RHOAI mode (openshiftMode=true or OPENSHIFT_MODE=true)
-- Prerequisites for RHOAI deployment
-- Link to TEST-PLAN.md for detailed steps
+**Output**: Documentation files created in blueprint directory
 
 ---
 
@@ -437,16 +448,16 @@ Add RHOAI deployment section showing:
 
 Spawn validation subagent to verify generated files. Iterate until clean or max 3 attempts.
 
-**IMPORTANT: Do NOT read `subagent-validation-prompt.md` yourself - it's only for the subagent to read.**
+**IMPORTANT: Do NOT read `subagents/validation-prompt.md` yourself - it's only for the subagent to read.**
 
 #### 6.5.1 Spawn Validation Subagent
 
 ```python
-Agent(
+validation_report = Agent(
     description="Validate RHOAI conversion outputs",
     prompt=f"""
 Read and follow validation instructions from:
-.claude/skills/bp-convert-to-rhoai/subagent-validation-prompt.md
+.claude/skills/bp-convert-to-rhoai/subagents/validation-prompt.md
 
 **Validation context:**
 - Blueprint directory: {blueprint_dir}
@@ -531,14 +542,20 @@ Print comprehensive summary using Conversion Summary Report template from `outpu
 
 ## Supporting Documents
 
+### Main Agent Reads:
 - `reasoning-guardrails.md`: Concern areas to check during reasoning - **Read at Phase 3**
-- `subagent-validation-prompt.md`: Validation instructions for subagent - **DO NOT READ (subagent reads this, not you)**
-- `output-templates.md`: Templates for TEST-PLAN, RHOAI-CONVERSION, summary - **Read at Phase 6-7**
+- `output-templates.md`: Templates for summary report - **Read at Phase 7**
 - `knowledge-base/README.md`: Knowledge base structure and usage
 
-Read these documents at the appropriate phase boundaries as instructed above ("before continuing").
+### Subagent-Only Documents (DO NOT READ):
+- `subagents/blueprint-analyzer-prompt.md`: Blueprint analysis instructions
+- `subagents/knowledge-scorer-prompt.md`: Knowledge scoring instructions
+- `subagents/documentation-generator-prompt.md`: Documentation generation instructions (reads output-templates.md)
+- `subagents/validation-prompt.md`: Validation instructions
 
-**Note:** Only read documents marked for you to read. The subagent-validation-prompt.md is passed to the validation subagent via the Agent tool prompt - you should never read it directly to keep your context clean.
+Read main agent documents at the appropriate phase boundaries as instructed above ("before continuing").
+
+**Note:** Never read subagent prompt files - they're passed to subagents via Agent tool prompt to keep main context clean.
 
 ## Important Guidelines
 
