@@ -137,83 +137,13 @@ Each `<file>` entry includes a `<path>` field pointing to the full knowledge fil
 
 ---
 
-### Phase 3: Dynamic Reasoning with Guardrails
+### Phase 3: User Decision Points
 
-**Read `reasoning-guardrails.md` before continuing** to understand concern areas.
+**Use AskUserQuestion tool** to gather critical decisions that will shape the conversion approach.
 
-#### 3.1 Think Freely About Conversion
+#### 3.1 Model Deployment Strategy (If Applicable)
 
-Reason about how to convert each component. Questions should emerge organically from analysis, not from a fixed template.
-
-**Example reasoning flow:**
-```
-"I see Triton Inference Server in docker-compose..."
-  ↓ Question: "How should Triton be deployed on RHOAI?"
-  ↓ Consult knowledge: triton-on-rhoai.md
-  ↓ Answer: Needs GPU, anyuid SCC, dedicated node pool pattern
-
-"Triton requires GPU allocation..."
-  ↓ Question: "What's the OpenShift pattern for GPU resources?"
-  ↓ Consult knowledge: gpu-allocation-openshift.md
-  ↓ Answer: nodeSelector + tolerations + nvidia.com/gpu resource limits
-
-"Blueprint also has Milvus..."
-  ↓ Question: "Integration requirements for Triton + Milvus?"
-  ↓ Consult knowledge: triton-milvus-integration.md (if exists)
-  ↓ Answer: Service mesh config + init order requirements
-
-Continue reasoning organically...
-```
-
-#### 3.2 Check Guardrails
-
-Before proceeding to user decisions, verify all concern areas from `reasoning-guardrails.md` were addressed:
-- Resource allocation (GPU, CPU, memory, storage)
-- Security contexts and SCCs
-- Networking (routes, services, DNS)
-- Persistent storage (PVCs, access modes)
-- Inter-service dependencies
-- Initialization order
-- Secrets and config management
-- Image registries and pull secrets
-- Health checks and probes
-- Resource quotas and limits
-
-If any concern feels unaddressed, reason about it explicitly before proceeding.
-
-#### 3.3 Query Context7 (When Knowledge Gaps Exist)
-
-If encountering technologies not in knowledge base:
-
-```python
-# Example: Blueprint uses FUSE mounts, not documented
-library_id = resolve_library_id("Red Hat OpenShift", query)
-docs = query_docs(library_id, "OpenShift FUSE mount security context constraints best practices")
-apply_pattern_from_docs(docs)
-```
-
-**When to use:** Component/technology not in knowledge base, need Red Hat official guidance.
-
-#### 3.4 GitHub Source Lookup (When Knowledge Insufficient)
-
-If knowledge file lacks implementation details:
-1. Check knowledge file's `source_examples` in frontmatter
-2. Clone/fetch referenced repository
-3. Navigate to relevant files (e.g., templates/services/triton.yaml)
-4. Read actual implementation
-5. Apply similar pattern to new blueprint
-
-**When to trigger:** Knowledge summary insufficient, need exact YAML/code.
-
----
-
-### Phase 4: User Decision Points
-
-**Use AskUserQuestion tool** to gather critical decisions before generating modifications.
-
-#### 4.1 Model Deployment Strategy (Critical)
-
-If blueprint deploys NIM models, present options:
+If blueprint deploys NIM models, ask about deployment strategy:
 
 ```
 "This blueprint deploys the following NIM models:
@@ -236,12 +166,114 @@ C. Hybrid (critical models local, others via API)
 Which deployment strategy do you prefer?"
 ```
 
-#### 4.2 Multiple Valid Patterns
+#### 3.2 Cluster Capabilities
 
-If knowledge base shows multiple approaches for same component:
+Ask about cluster-specific capabilities that affect conversion decisions:
 
 ```
-"I found 2 patterns for deploying <component> with <requirement>:
+"Cluster capability questions:
+
+1. Storage: Does your OpenShift cluster have ReadWriteMany (RWM) storage class available (e.g., NFS, CephFS, GlusterFS)?
+   - Yes, I have RWM storage available
+   - No, only RWO (ReadWriteOnce) storage available
+   - Not sure, need to check
+
+2. GPU Resources (if blueprint needs GPU): Do you have GPU nodes available?
+   - Yes, with <GPU-type>
+   - No, prefer API-based models
+   - Not sure
+
+[Add other cluster-specific questions based on blueprint analysis:]
+- Ingress controller type (if external access needed)
+- Available operators (if blueprint could leverage them)
+- Security policy constraints (if known limitations exist)
+```
+
+**When to ask:**
+- Blueprint deploys NIM models → Always ask deployment strategy first
+- Blueprint uses or could benefit from RWM storage → Ask about storage capabilities
+- Blueprint requires GPU → Ask about GPU availability
+- Blueprint needs external access → Ask about ingress setup
+- Other cluster-specific needs identified during analysis
+
+**Important:** These questions should be answerable from blueprint structure analysis alone.
+
+---
+
+### Phase 4: Dynamic Reasoning with Guardrails
+
+**Read `reasoning-guardrails.md` before continuing** to understand concern areas.
+
+#### 4.1 Think Freely About Conversion
+
+Reason about how to convert each component, **informed by user decisions from Phase 3**. Questions should emerge organically from analysis, not from a fixed template.
+
+**Example reasoning flow:**
+```
+"I see Milvus vector database in docker-compose..."
+  ↓ Question: "How should Milvus be deployed on RHOAI?"
+  ↓ Consult knowledge: milvus-on-rhoai.md
+  ↓ Answer: Needs persistent storage, init container for schema setup
+
+"User has RWO storage only from Phase 3..."
+  ↓ Question: "Can Milvus work with RWO?"
+  ↓ Consult knowledge: storage-pvc-patterns.md
+  ↓ Answer: Yes, single-pod deployment with RWO is sufficient for Milvus
+
+"Blueprint also has Redis cache..."
+  ↓ Question: "Integration requirements for Milvus + Redis?"
+  ↓ Consult knowledge: integration patterns
+  ↓ Answer: Service discovery via DNS, init order requirements
+
+Continue reasoning organically...
+```
+
+#### 4.2 Check Guardrails
+
+Before proceeding, verify all concern areas from `reasoning-guardrails.md` were addressed:
+- Resource allocation (GPU, CPU, memory, storage)
+- Security contexts and SCCs
+- Networking (routes, services, DNS)
+- Persistent storage (PVCs, access modes)
+- Inter-service dependencies
+- Initialization order
+- Secrets and config management
+- Image registries and pull secrets
+- Health checks and probes
+- Resource quotas and limits
+
+If any concern feels unaddressed, reason about it explicitly before proceeding.
+
+#### 4.3 Query Context7 (When Knowledge Gaps Exist)
+
+If encountering technologies not in knowledge base:
+
+```python
+# Example: Blueprint uses FUSE mounts, not documented
+library_id = resolve_library_id("Red Hat OpenShift", query)
+docs = query_docs(library_id, "OpenShift FUSE mount security context constraints best practices")
+apply_pattern_from_docs(docs)
+```
+
+**When to use:** Component/technology not in knowledge base, need Red Hat official guidance.
+
+#### 4.4 GitHub Source Lookup (When Knowledge Insufficient)
+
+If knowledge file lacks implementation details:
+1. Check knowledge file's `source_examples` in frontmatter
+2. Clone/fetch referenced repository
+3. Navigate to relevant files (e.g., templates/services/triton.yaml)
+4. Read actual implementation
+5. Apply similar pattern to new blueprint
+
+**When to trigger:** Knowledge summary insufficient, need exact YAML/code.
+
+#### 4.5 Pattern Choice Questions (If Multiple Valid Approaches)
+
+If knowledge base shows multiple valid approaches for the same component and user decisions don't clearly favor one:
+
+```
+"Based on your cluster setup, I found 2 patterns for <component>:
 
 Pattern A (from <blueprint-name>): <approach>
 - Pros: <benefits>
@@ -251,53 +283,10 @@ Pattern B (from <blueprint-name>): <approach>
 - Pros: <benefits>
 - Cons: <tradeoffs>
 
-Which approach fits your cluster setup?"
+Which approach fits your requirements better?"
 ```
 
-#### 4.3 Resource Constraints
-
-If blueprint requires significant resources and user's cluster may not support:
-
-```
-"This blueprint requires:
-- <GPU-count> x <GPU-type>
-- <RAM> total memory
-- <storage> persistent storage
-
-Do you have these resources available in your OpenShift cluster?
-- Yes, proceed with full local deployment
-- Partially, discuss alternatives (hybrid, resource reduction)
-- No, prefer NVIDIA hosted models via API"
-```
-
-#### 4.4 Cluster Storage and Configuration
-
-If blueprint requires shared storage (PVC with RWM access mode) or has cluster-specific configuration needs:
-
-```
-"This blueprint uses/may benefit from ReadWriteMany (RWM) Persistent Volume Claims for:
-- <component> - <reason> (Required/Optional)
-- ...
-
-Does your OpenShift cluster have RWM storage class available (e.g., NFS, CephFS, GlusterFS)?
-- Yes, I have RWM storage available
-- No, only RWO (ReadWriteOnce) storage available
-- Not sure, need to check"
-
-[If other cluster-specific questions arise during analysis:]
-"Additional cluster configuration questions:
-- <question-about-ingress/networking/security/etc>
-- <question-about-available-operators/capabilities>
-- ..."
-```
-
-**When to ask:**
-- Multiple valid approaches exist in knowledge base
-- Decision depends on user's environment (cluster, policies, resources)
-- Model deployment strategy needed
-- Knowledge base doesn't indicate clear preference
-- Blueprint requires or could benefit from RWM storage
-- Cluster-specific capabilities needed (ingress, networking, security policies, available operators)
+**When to ask:** Knowledge shows multiple approaches AND user's prior decisions don't resolve the choice
 
 ---
 
