@@ -705,7 +705,7 @@ subjects:
 
 **How to Identify Service Account Names:**
 
-For Bitnami subcharts (Redis, MinIO, PostgreSQL, MongoDB):
+For Bitnami subcharts (Redis, MinIO, PostgreSQL, MongoDB) - (always use `latest` tag for Bitnami images):
 ```yaml
 {{ .Release.Name }}-<subchart-name>-<component>
 ```

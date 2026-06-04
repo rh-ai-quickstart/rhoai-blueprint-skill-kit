@@ -1,7 +1,7 @@
 ---
 name: postgresql-on-rhoai
 description: PostgreSQL database deployment on RHOAI using Bitnami image with nullable security contexts
-summary: "Solves persistent database storage for job state, checkpoints, and agent memory in NVIDIA blueprints running on RHOAI. Use Bitnami PostgreSQL with nullable security contexts for standard deployments; use operators (Crunchy/Zalando) when HA/backups/monitoring needed; use managed services (RDS/Cloud SQL) for cloud deployments. Set `podSecurityContext: null` and `securityContext: null` in OpenShift overlay because restricted-v2 SCC auto-assigns UIDs from namespace range—explicit fsGroup/runAsUser causes permission conflicts. Init containers fail without `pg_isready` retry loops, PVC stuck Pending without explicit storageClassName, and permission denied errors occur if security contexts not nulled in overlay."
+summary: "Solves persistent database storage for job state, checkpoints, and agent memory in NVIDIA blueprints running on RHOAI. Use Bitnami PostgreSQL with nullable security contexts for standard deployments (**always use `latest` tag for Bitnami images**); use operators (Crunchy/Zalando) when HA/backups/monitoring needed; use managed services (RDS/Cloud SQL) for cloud deployments. Set `podSecurityContext: null` and `securityContext: null` in OpenShift overlay because restricted-v2 SCC auto-assigns UIDs from namespace range—explicit fsGroup/runAsUser causes permission conflicts. Init containers fail without `pg_isready` retry loops, PVC stuck Pending without explicit storageClassName, and permission denied errors occur if security contexts not nulled in overlay."
 metadata:
   type: component
 components: [postgresql, postgres, database]
@@ -21,6 +21,8 @@ source_examples:
 ## Overview
 
 PostgreSQL is commonly used in NVIDIA blueprints as a persistent database for job state, checkpoints, agent memory, and application data. The Bitnami PostgreSQL image works well on RHOAI with proper security context configuration.
+
+**Important:** Always use `latest` tag for Bitnami images - specific version tags are not available in free container registries.
 
 ## Conversion Pattern
 
