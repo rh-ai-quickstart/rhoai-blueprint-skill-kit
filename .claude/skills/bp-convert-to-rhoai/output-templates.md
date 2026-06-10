@@ -248,6 +248,26 @@ Knowledge Sources Used:
 Context7 Queries Made: <count>
 [If any queries were made to Red Hat docs]
 
+Validation Feedback (Phase 4.7/4.8):
+- Validation iterations: <count>
+- Components validated:
+  | Component | Status | Blockers Found | Alternatives Applied |
+  |-----------|--------|----------------|---------------------|
+  | <comp-1>  | READY  | <count>        | <alternative-desc>  |
+  | <comp-2>  | READY  | <count>        | -                   |
+  ...
+- Blockers resolved: <count>
+  - <component>: <blocker-desc> → <alternative-applied>
+  - ...
+- User decisions on persistent blockers: <count>
+  [List if any blockers required user escalation - should be VERY RARE]
+
+Post-Implementation Validation (Phase 6.5):
+- Status: PASSED | PASSED WITH WARNINGS | INCOMPLETE
+- Issues fixed automatically: <count>
+- Manual fixes required: <count>
+  [List if any]
+
 Next Steps:
 1. Review modified files for correctness
 2. Follow TEST-PLAN.md for deployment verification

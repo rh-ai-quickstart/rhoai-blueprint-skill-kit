@@ -290,93 +290,173 @@ Which approach fits your requirements better?"
 
 ---
 
-### Phase 5: Generate Modifications
+### Phase 4.6: Generate Implementation Spec
 
-#### 5.1 Minimal Invasive Changes
+After completing reasoning and resolving all pattern choices, generate a structured implementation specification.
 
-**Prefer editing existing files over creating new ones:**
+**Generate single YAML file**: `/tmp/conversion-spec.yaml`
 
-```bash
-# Good: Modify existing values.yaml
-Edit existing Helm values.yaml to add openshiftMode flag
+Follow the structure defined in `.claude/skills/bp-convert-to-rhoai/spec-template.md`.
 
-# Avoid: Creating new file when edit would work
-Don't create values-openshift.yaml when you can add conditional to values.yaml
+**Key points:**
+- Reference KB patterns used (carry forward from Phase 2 loaded knowledge)
+- Provide validation_context (blueprint specifics, cluster constraints, deployment decisions)
+- List all files to modify/create with specific changes
+- Document dependencies between components
+
+---
+
+### Phase 4.7: Validate Spec with Parallel Validators
+
+Spawn validator subagents (one per component) to verify conversion approach before implementation.
+
+**For each component**, spawn validator in parallel:
+
+```python
+components = parse_yaml("/tmp/conversion-spec.yaml")["components"]
+
+for component_name in components.keys():
+    Agent(
+        description=f"Validate {component_name} conversion",
+        prompt=f"""
+Read and follow validation instructions from:
+.claude/skills/bp-convert-to-rhoai/subagents/component-validator-prompt.md
+
+**Validation parameters:**
+- Component name: {component_name}
+- Spec file: /tmp/conversion-spec.yaml
+- KB directory: .claude/skills/bp-convert-to-rhoai/knowledge-base/
+""",
+        run_in_background=True  # Parallel execution
+    )
 ```
 
-**Create new files only when necessary:**
-- OpenShift Routes (no docker-compose equivalent)
-- RHOAI-specific manifests for oc apply deployments (when blueprint has no equivalent)
+Validators verify the spec against KB patterns and external resources.
 
-#### 5.2 Apply RHOAI Mode Patterns
+**Validation output format:**
+```yaml
+component: name
+status: READY | BLOCKED | PARTIAL
+validation_results:
+  - area: kb_alignment | helm_chart | images | config | dependencies
+    status: PASS | FAIL | PARTIAL
+    findings: [what was discovered]
+    kb_evidence: "If challenging main agent: KB section X says Y"
+    blockers:
+      - issue: "Description of breaking problem"
+        alternative_approaches:
+          - approach: "Solution description"
+            pros: "Benefits"
+            cons: "Tradeoffs"
+            source: "KB file or Red Hat doc URL"
+            recommendation: PRIMARY | SECONDARY | FALLBACK
+        consequence: "What breaks if not fixed"
+    recommendations: [how to fix in spec]
+```
 
-**For Helm charts:**
+---
+
+### Phase 4.8: Refine Spec + Iteration
+
+Read all validation results and refine spec based on feedback.
+
+#### 4.8.1 Read Validation Results
+
+```python
+validation_files = glob("/tmp/validation-*.yaml")
+validations = {parse_component_name(f): parse_yaml(f) for f in validation_files}
+```
+
+#### 4.8.2 Apply Blocker Fixes
+
+For each component with blockers:
+
+```python
+for component_name, validation in validations.items():
+    if validation.get('blockers'):
+        for blocker in validation['blockers']:
+            # Apply PRIMARY alternative to spec
+            primary = [a for a in blocker['alternative_approaches'] 
+                      if a['recommendation'] == 'PRIMARY'][0]
+            
+            # Update spec with alternative
+            apply_alternative_to_spec(component_name, blocker, primary)
+            
+            # Log refinement
+            log(f"Refined {component_name}: {blocker['issue']} → {primary['approach']}")
+```
+
+**Always write refined spec** to `/tmp/conversion-spec-refined.yaml` (even if no blockers found, Phase 5 reads from this path)
+
+#### 4.8.3 Iteration Logic
+
+- **If blockers remain**: Re-run validation (Phase 4.7) with refined spec
+- **Max iterations**: 2-3 validation cycles
+- **If critical blocker persists after max iterations**:
+  
+  Use AskUserQuestion to escalate:
+  ```python
+  AskUserQuestion(
+      question=f"Blocker in {component}: {blocker['issue']}. Validators proposed alternatives:",
+      options=[
+          {
+              "label": alt['approach'][:50],  # PRIMARY alternative
+              "description": f"Pros: {alt['pros']}\nCons: {alt['cons']}"
+          }
+          for alt in blocker['alternative_approaches']
+      ]
+  )
+  ```
+  
+  Apply user's decision to spec and continue.
+
+**Note**: User escalation should be VERY RARE - most blockers resolve in 1-2 iterations through validator alternatives.
+
+---
+
+### Phase 5: Implement from Refined Spec
+
+Spawn ONE implementer subagent to apply the validated, refined specification.
+
+```python
+Agent(
+    description="Implement RHOAI conversion from refined spec",
+    prompt=f"""
+Read and follow implementation instructions from:
+.claude/skills/bp-convert-to-rhoai/subagents/spec-implementer-prompt.md
+
+**Implementation parameters:**
+- Refined spec: /tmp/conversion-spec-refined.yaml
+- Validation findings directory: /tmp/
+- Blueprint directory: {blueprint_dir}
+"""
+)
+```
+
+Implementer applies the spec to blueprint files.
+
+**For Helm deployments**, implementer applies openshiftMode pattern:
 ```yaml
 # values.yaml - add flag
 openshiftMode: false  # Default: original behavior
 
-# templates/deployment.yaml - conditional logic
-spec:
-  template:
-    spec:
-      {{- if .Values.openshiftMode }}
-      # RHOAI-specific configuration
-      securityContext:
-        runAsUser: 0
-      nodeSelector:
-        nvidia.com/gpu.present: "true"
-      {{- else }}
-      # Original configuration
-      securityContext: {}
-      {{- end }}
+# templates/*.yaml - conditional logic
+{{- if .Values.openshiftMode }}
+# RHOAI-specific configuration
+{{- else }}
+# Original configuration
+{{- end }}
 ```
 
-**For docker-compose or oc apply deployments:**
+**For oc-apply deployments**, implementer applies OPENSHIFT_MODE pattern:
 ```yaml
-# Environment variable check
+# Environment variable check in manifests/scripts
 if [ "$OPENSHIFT_MODE" = "true" ]; then
-  # RHOAI-specific configuration
+  # RHOAI configuration
 else
   # Original configuration
 fi
 ```
-
-Or in YAML manifests:
-```yaml
-# Use environment variable substitution or envsubst
-command: ["/bin/sh", "-c"]
-args:
-  - |
-    if [ "$OPENSHIFT_MODE" = "true" ]; then
-      # RHOAI config
-    else
-      # Original config
-    fi
-```
-
-#### 5.3 Apply Component Patterns
-
-For each component, apply patterns from loaded knowledge files:
-- Security contexts from `components/<name>-on-rhoai.md`
-- Storage from `resource-patterns/storage-pvc-patterns.md`
-- GPU allocation from `resource-patterns/gpu-allocation-openshift.md`
-- Networking from `resource-patterns/networking-routes-ingress.md`
-- Integration patterns if applicable
-
-#### 5.4 Deployment Method Selection
-
-Based on blueprint structure:
-
-**Simple notebook:**
-- Generate `oc apply` manifests
-- Create: notebook-deployment.yaml, pvc.yaml (if storage), route.yaml (if external access)
-- Use `OPENSHIFT_MODE` environment variable for conditionals
-
-**Multi-service or docker-compose:**
-- Generate or modify Helm chart
-- Ensure ALL resources are Helm-managed templates (no standalone `oc apply`)
-- Use `openshiftMode` value flag for conditionals
-- Create: Chart.yaml, values.yaml, templates/ directory
 
 ---
 
@@ -405,7 +485,6 @@ Read and follow instructions from:
 **Documentation context:**
 - Blueprint directory: {blueprint_dir}
 - Deployment method: {deployment_method}
-- RHOAI mode toggle: {rhoai_mode_toggle}
 - Components: {components}
 - Patterns applied: {patterns_applied}
 - User decisions: {user_decisions}
@@ -442,7 +521,6 @@ Read and follow validation instructions from:
 **Validation context:**
 - Blueprint directory: {blueprint_dir}
 - Deployment method: {deployment_method}
-- RHOAI mode toggle: {rhoai_mode_toggle}
 - Components: {components_list}
 
 Navigate to blueprint directory and run validation checks.
@@ -512,10 +590,16 @@ Print comprehensive summary using Conversion Summary Report template from `outpu
 - Files modified/created
 - Knowledge sources used
 - Context7 queries (if any)
-- **Validation status** (PASSED / PASSED WITH WARNINGS / INCOMPLETE)
-- **Validation iterations** (how many validation runs)
-- **Issues fixed automatically** (count and summary)
-- **Manual fixes required** (if any)
+- **Validation feedback (Phase 4.7/4.8)**:
+  - Validation iterations count (how many validation cycles)
+  - Components validated (READY / BLOCKED / PARTIAL status per component)
+  - Blockers found and resolved (count and summary)
+  - Alternative approaches applied (which alternatives, why)
+  - User decisions on persistent blockers (if any escalations occurred)
+- **Post-implementation validation status (Phase 6.5)**:
+  - PASSED / PASSED WITH WARNINGS / INCOMPLETE
+  - Issues fixed automatically
+  - Manual fixes required
 - Next steps for user
 
 ---
@@ -523,15 +607,18 @@ Print comprehensive summary using Conversion Summary Report template from `outpu
 ## Supporting Documents
 
 ### Main Agent Reads:
-- `reasoning-guardrails.md`: Concern areas to check during reasoning - **Read at Phase 3**
+- `reasoning-guardrails.md`: Concern areas to check during reasoning - **Read at Phase 4.2**
+- `spec-template.md`: Template for conversion spec structure - **Reference at Phase 4.6**
 - `output-templates.md`: Templates for summary report - **Read at Phase 7**
 - `knowledge-base/README.md`: Knowledge base structure and usage
 
 ### Subagent-Only Documents (DO NOT READ):
 - `subagents/blueprint-analyzer-prompt.md`: Blueprint analysis instructions
 - `subagents/knowledge-scorer-prompt.md`: Knowledge scoring instructions
+- `subagents/component-validator-prompt.md`: Component validation instructions (Phase 4.7)
+- `subagents/spec-implementer-prompt.md`: Spec implementation instructions (Phase 5)
 - `subagents/documentation-generator-prompt.md`: Documentation generation instructions (reads output-templates.md)
-- `subagents/validation-prompt.md`: Validation instructions
+- `subagents/validation-prompt.md`: Post-implementation validation instructions (Phase 6.5)
 
 Read main agent documents at the appropriate phase boundaries as instructed above ("before continuing").
 

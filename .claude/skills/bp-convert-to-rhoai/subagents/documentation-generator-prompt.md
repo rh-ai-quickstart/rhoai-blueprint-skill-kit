@@ -37,7 +37,6 @@ This file contains the exact templates you must follow for:
 **Input Parameters:**
 - Blueprint directory: {blueprint_dir}
 - Deployment method: {deployment_method}
-- RHOAI mode toggle: {rhoai_mode_toggle}
 - Components: {components}
 - Patterns applied: {patterns_applied}
 - User decisions: {user_decisions}
