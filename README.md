@@ -98,11 +98,27 @@ git subtree pull --prefix=.claude/hooks oc-policy-gate master --squash
 
 ## How It Works
 
-```
-Agent command → PreToolUse Hook → Policy check → allow / deny / ask
-                                      ↓
-                              openshift-policy.yaml
-                           (namespace + verb rules)
+Every command in Claude Code / Cursor passes through a gate pipeline:
+
+```mermaid
+flowchart TD
+    A["Agent decides to run a command"] --> B["PreToolUse Hook"]
+    B -->|"exit: deny"| X["BLOCKED - Command never runs"]
+    B -->|"exit: allow"| E["Command Executes"]
+    B -->|"exit: ask / defer"| C["Permission Rules<br/>(settings.json)"]
+    C -->|Denied| X
+    C -->|Allowed| E
+    C -->|Needs asking| D["User Prompt"]
+    D -->|Approve| E
+    D -->|Deny| X
+    E --> F["PostToolUse Hook"]
+    F --> G["Results to Agent"]
+
+    style B fill:#6366f1,color:#fff,stroke:#4f46e5,stroke-width:2px
+    style C fill:#f39c12,color:#fff
+    style D fill:#3498db,color:#fff
+    style X fill:#1e293b,color:#fff
+    style E fill:#27ae60,color:#fff
 ```
 
 1. **allow** — command runs without user prompt

@@ -4,6 +4,22 @@ set +e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK="${SCRIPT_DIR}/openshift-policy.sh"
 
+TEST_POLICY=$(mktemp /tmp/test-policy-XXXXXX.yaml)
+cat > "$TEST_POLICY" <<'YAML'
+namespaces:
+  my-app-dev:
+    oc: [read, write, exec]
+    helm: [read, write]
+  my-app-staging:
+    oc: [read, write]
+    helm: [read]
+  my-app-prod:
+    oc: [read]
+    helm: [read]
+YAML
+export OPENSHIFT_POLICY_FILE="$TEST_POLICY"
+trap 'rm -f "$TEST_POLICY"' EXIT
+
 passed=0 failed=0
 
 run_test() {
