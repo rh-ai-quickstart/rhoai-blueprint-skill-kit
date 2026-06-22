@@ -1,0 +1,261 @@
+---
+name: bp-deploy-and-debug
+description: Deploy a converted RHOAI blueprint to OpenShift, debug failures, and verify end-to-end
+argument-hint: <path-to-project-directory> <namespace>
+allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, WebSearch
+---
+
+# RHOAI Blueprint Deploy & Debug Skill
+
+You are deploying a converted RHOAI blueprint to an OpenShift cluster, debugging any failures systematically in dependency order, and verifying end-to-end functionality.
+
+## Goal
+
+Deploy the blueprint, get all resources healthy, and pass the full TEST-PLAN.md — with minimal changes that preserve the original application flow.
+
+## Input
+
+User provides:
+- **Project path**: Local path to a blueprint directory that already has OpenShift support (YAML/Helm files, deployment docs)
+- **Namespace**: Target OpenShift namespace for deployment
+
+## Critical Rules
+
+1. **Every oc/helm command MUST use `-n <namespace>` explicitly** — never rely on current context
+2. **Do NOT change the intention of the original application flow** — fix deployment/config so the existing architecture works on OpenShift
+3. **Auto-apply** config/infra fixes: ports, service names, storage classes, security contexts, resource limits, env vars, image tags, probes, volumes, SCCs
+4. **Auto-apply** source code changes explicitly related to OpenShift (inside `if openshift_mode` blocks, OCP-specific config)
+5. **Ask user** for source code changes NOT explicitly related to OpenShift — use AskUserQuestion
+6. **Project-specific deploy commands** — never hardcode generic helm/oc commands; use what the Project Analyzer discovers
+7. **Max 3 fix attempts per resource** — escalate to user after 3 failed attempts
+
+## Workflow
+
+> **Note:** Some phases below spawn subagents via the Agent tool. Subagent prompt files in `subagents/` are loaded by those subagents — do not read them yourself.
+
+### Phase 1: Pre-deployment Analysis
+
+#### 1a. Spawn Cluster Access Validator Subagent
+
+```python
+Agent(
+    description="Validate cluster access",
+    prompt=f"""
+Read and follow instructions from:
+.claude/skills/bp-deploy-and-debug/subagents/cluster-access-validator-prompt.md
+
+Namespace: {namespace}
+"""
+)
+```
+
+Verifies login, and namespace existence — prompts user interactively if anything needs fixing. Returns `cluster-access-validated` on success.
+
+#### 1b. Spawn Project Analyzer Subagent
+
+```python
+Agent(
+    description="Analyze project for deployment",
+    prompt=f"""
+Read and follow instructions from:
+.claude/skills/bp-deploy-and-debug/subagents/project-analyzer-prompt.md
+
+Project directory: {project_path}
+Namespace: {namespace}
+"""
+)
+```
+
+**Output**: `/tmp/deploy-analysis.yaml` with deploy commands, expected resources, dependency order
+
+Read the analysis result. Understand the deployment method, components, and dependency graph.
+
+---
+
+### Phase 2: Deploy
+
+Run the project-specific deploy commands from `deploy-analysis.yaml` `deploy_commands` field.
+
+Extract the `deploy_commands` field from the analysis file:
+
+```bash
+yq eval '.deploy_commands' /tmp/deploy-analysis.yaml
+```
+
+This returns the list of deploy commands with their descriptions. Execute each command in order — all commands already include `-n <namespace>`.
+
+Don't wait for all pods to be Ready — proceed to health scan.
+
+---
+
+### Phase 3: Initial Health Scan
+
+Spawn Health Scanner subagent:
+
+```python
+Agent(
+    description="Scan namespace health",
+    prompt=f"""
+Read and follow instructions from:
+.claude/skills/bp-deploy-and-debug/subagents/health-scanner-prompt.md
+
+Namespace: {namespace}
+Expected resources file: /tmp/deploy-analysis.yaml (read ONLY the expected_resources field)
+"""
+)
+```
+
+**Output**: `/tmp/deploy-state.yaml`
+
+Read `unhealthy_resources` field from the state file.
+- If empty (all healthy) → skip to Phase 5
+- If unhealthy resources exist → enter Phase 4
+
+---
+
+### Phase 4: Debug Loop
+
+Read `dependency_order` from `/tmp/deploy-analysis.yaml` to sort unhealthy resources — fix leaves first (resources with no dependencies), then work up.
+
+**For each unhealthy resource** (in dependency order):
+
+#### 4a. Spawn Debugger Subagent
+
+```python
+Agent(
+    description=f"Debug {resource_name}",
+    prompt=f"""
+Read and follow instructions from:
+.claude/skills/bp-deploy-and-debug/subagents/resource-debugger-prompt.md
+
+Resource name: {resource_name}
+Resource kind: {resource_kind}
+Namespace: {namespace}
+Project path: {project_path}
+Current attempt number (attempt_number): {attempt_number}
+"""
+)
+```
+
+**Output**: `/tmp/debug-{resource_name}.yaml` — appended with `attempt_{N}` entry containing root cause and proposed fix
+
+#### 4b. Spawn Fix Applier Subagent
+
+Extract deploy commands to pass to the fix applier:
+
+```bash
+yq eval '.deploy_commands' /tmp/deploy-analysis.yaml
+```
+
+```python
+Agent(
+    description=f"Fix {resource_name}",
+    prompt=f"""
+Read and follow instructions from:
+.claude/skills/bp-deploy-and-debug/subagents/fix-applier-prompt.md
+
+Debug report: /tmp/debug-{resource_name}.yaml
+Namespace: {namespace}
+Project path: {project_path}
+Deploy commands: {deploy_commands}
+Current attempt number (attempt_number): {attempt_number}
+"""
+)
+```
+
+**Output**: `/tmp/fix-{resource_name}.yaml` updated with `attempt_{N}` entry
+
+#### 4c. Re-scan Health
+
+Spawn Health Scanner subagent (same as Phase 3) to re-scan ALL resources.
+
+**Output**: Updated `/tmp/deploy-state.yaml`
+
+#### 4d. Evaluate Result
+
+Read `unhealthy_resources` from updated state file:
+
+- **Resource now healthy** → move to next unhealthy resource
+- **Still unhealthy AND attempt < 3** → back to 4a with incremented attempt number
+  - Debugger reads previous attempts from both `/tmp/debug-{resource_name}.yaml` and `/tmp/fix-{resource_name}.yaml`
+- **Attempt = 3** → AskUserQuestion:
+  ```
+  "Resource {resource_name} ({resource_kind}) is still unhealthy after 3 fix attempts:
+
+  Attempt 1: {issue} → {fix_applied} → {result}
+  Attempt 2: {issue} → {fix_applied} → {result}
+  Attempt 3: {issue} → {fix_applied} → {result}
+
+  Options:
+  A. Skip this resource and continue with others
+  B. Provide guidance on how to fix this resource
+  C. Stop deployment and investigate manually"
+  ```
+
+Continue to next unhealthy resource until all processed.
+
+**Note:** Since every resource either gets fixed or is escalated to the user at attempt 3, reaching Phase 5 with unhealthy resources should be very rare (only if user chose to skip).
+
+---
+
+### Phase 5: E2E Testing
+
+Spawn E2E Tester subagent:
+
+```python
+Agent(
+    description="Run E2E tests",
+    prompt=f"""
+Read and follow instructions from:
+.claude/skills/bp-deploy-and-debug/subagents/e2e-tester-prompt.md
+
+Project path: {project_path}
+Namespace: {namespace}
+"""
+)
+```
+
+**Output**: `/tmp/e2e-results.yaml`
+
+Read the results. E2E failures are reported to the user in Phase 6 — no re-entry into debug loop.
+
+---
+
+### Phase 6: Final Report
+
+**Read `output-templates/final-report-template.md` before continuing** for report format.
+
+Generate and print the final report including:
+- Deployment status
+- Resources deployed and final state
+- Issues found and fixes applied (read from `/tmp/fix-*.yaml` files)
+- E2E test results (pass/fail per test)
+- If E2E failures: clear description of what failed and why
+- Files modified during debugging
+
+Copy state to project directory:
+```bash
+mkdir -p {project_path}/.rhoai
+cp /tmp/deploy-state.yaml {project_path}/.rhoai/deploy-report.yaml
+```
+
+---
+
+## Important Guidelines
+
+### DO:
+- Always use `-n <namespace>` on every oc/helm command
+- Use project-specific deploy commands from analysis (not generic templates)
+- Fix resources in dependency order (leaves first)
+- Read `unhealthy_resources` field first from state file
+- Let subagents handle diagnosis and fixing — keep orchestration clean
+- Escalate to user after 3 failed attempts per resource
+- Report E2E failures clearly without re-entering debug loop
+
+### DON'T (never do any of these):
+- Never read subagent prompt files in the main agent
+- Never hardcode generic helm install / oc apply commands
+- Never change the intention of the original application flow
+- Never apply source code changes not related to OpenShift without user approval
+- Never skip health scan after a fix (always re-scan full namespace)
+- Never enter another debug loop after E2E failures — just report clearly
