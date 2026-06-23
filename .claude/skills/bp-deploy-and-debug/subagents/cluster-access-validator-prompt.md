@@ -35,7 +35,7 @@ oc get pods
 ### 3. Verify Namespace Exists
 
 ```bash
-oc get project {namespace} -o name
+oc get project {namespace} -o name -n {namespace}
 ```
 
 If namespace doesn't exist → AskUserQuestion: "Namespace `{namespace}` does not exist. Create it with `oc new-project {namespace}`?"

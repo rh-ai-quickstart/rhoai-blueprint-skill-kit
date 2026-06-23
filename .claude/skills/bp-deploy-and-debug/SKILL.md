@@ -74,17 +74,22 @@ Read the analysis result. Understand the deployment method, components, and depe
 
 ### Phase 2: Deploy
 
-Run the project-specific deploy commands from `deploy-analysis.yaml` `deploy_commands` field.
+Spawn Deploy Executor subagent:
 
-Extract the `deploy_commands` field from the analysis file:
+```python
+Agent(
+    description="Deploy to OpenShift",
+    prompt=f"""
+Read and follow instructions from:
+.claude/skills/bp-deploy-and-debug/subagents/deploy-executor-prompt.md
 
-```bash
-yq eval '.deploy_commands' /tmp/deploy-analysis.yaml
+Namespace: {namespace}
+Project path: {project_path}
+"""
+)
 ```
 
-This returns the list of deploy commands with their descriptions. Execute each command in order — all commands already include `-n <namespace>`.
-
-Don't wait for all pods to be Ready — proceed to health scan.
+**Output validation**: If the subagent's return text does not contain `deploy-execute-status: success`, treat it as a deployment failure and re-run the subagent (max 2 retries). If it still fails after retries, stop and report the deployment failure to the user.
 
 ---
 
