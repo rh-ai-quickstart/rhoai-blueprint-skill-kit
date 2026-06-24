@@ -2,14 +2,15 @@
 
 Write/append to `/tmp/fix-{resource-name}.yaml` with this structure.
 
-**Important:** Each attempt is tracked under an `attempt_N` parent key. On retries, append a new `attempt_N` section — do NOT overwrite previous attempts. Both the debugger and fix applier read this file on retries to understand what was already tried.
+**Important:** Each attempt is tracked under a `{phase}_attempt_N` key (phase is `health` or `e2e`). On retries, append a new `{phase}_attempt_N` section — do NOT overwrite previous attempts. Both the debugger and fix applier read this file on retries to understand what was already tried.
 
 ```yaml
 resource: app-server
 kind: Deployment
 namespace: myns
 
-attempt_1:
+# Key format: {phase}_attempt_{N} — phase is "health" or "e2e"
+health_attempt_1:
   debugger:
     issue: "CrashLoopBackOff - permission denied writing to /app/data"
     root_cause: "SCC restricted-v2 prevents write to /app/data"
@@ -29,7 +30,7 @@ attempt_1:
     post_fix_status: "Still CrashLoopBackOff - different error: connection refused to postgresql:5432"
     user_approval_required: false
 
-attempt_2:
+health_attempt_2:
   debugger:
     issue: "CrashLoopBackOff - connection refused to postgresql:5432"
     root_cause: "POSTGRES_HOST env var set to 'postgresql' but service name is 'postgresql-svc'"
@@ -52,7 +53,7 @@ attempt_2:
 
 ## Rules
 
-- Never overwrite previous attempts — always append under next `attempt_N`
+- Never overwrite previous attempts — always append under next `{phase}_attempt_N`
 - `fix_category` is either `config` (auto-applied) or `source-code` (may need user approval)
 - `user_approval_required: true` when the fix changed non-OpenShift source code and user was asked
 - `result` is one of: `success`, `failed`, `partial`

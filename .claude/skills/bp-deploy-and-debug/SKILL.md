@@ -27,7 +27,7 @@ User provides:
 4. **Auto-apply** source code changes explicitly related to OpenShift (inside `if openshift_mode` blocks, OCP-specific config)
 5. **Ask user** for source code changes NOT explicitly related to OpenShift — use AskUserQuestion
 6. **Project-specific deploy commands** — never hardcode generic helm/oc commands; use what the Project Analyzer discovers
-7. **Max 3 fix attempts per resource** — escalate to user after 3 failed attempts
+7. **Max 3 fix attempts per resource per phase** — escalate to user after 3 failed attempts (health and e2e phases each get 3 attempts)
 
 ## Workflow
 
@@ -137,12 +137,13 @@ Resource name: {resource_name}
 Resource kind: {resource_kind}
 Namespace: {namespace}
 Project path: {project_path}
+Phase: health
 Current attempt number (attempt_number): {attempt_number}
 """
 )
 ```
 
-**Output**: `/tmp/debug-{resource_name}.yaml` — appended with `attempt_{N}` entry containing root cause and proposed fix
+**Output**: `/tmp/debug-{resource_name}.yaml` — appended with `health_attempt_{N}` entry containing root cause and proposed fix
 
 #### 4b. Spawn Fix Applier Subagent
 
@@ -163,12 +164,13 @@ Debug report: /tmp/debug-{resource_name}.yaml
 Namespace: {namespace}
 Project path: {project_path}
 Deploy commands: {deploy_commands}
+Phase: health
 Current attempt number (attempt_number): {attempt_number}
 """
 )
 ```
 
-**Output**: `/tmp/fix-{resource_name}.yaml` updated with `attempt_{N}` entry
+**Output**: `/tmp/fix-{resource_name}.yaml` updated with `health_attempt_{N}` entry
 
 #### 4c. Re-scan Health
 
@@ -182,7 +184,7 @@ Read `unhealthy_resources` from updated state file:
 
 - **Resource now healthy** → move to next unhealthy resource
 - **Still unhealthy AND attempt < 3** → back to 4a with incremented attempt number
-  - Debugger reads previous attempts from both `/tmp/debug-{resource_name}.yaml` and `/tmp/fix-{resource_name}.yaml`
+  - Debugger reads previous `health_attempt_*` entries from both `/tmp/debug-{resource_name}.yaml` and `/tmp/fix-{resource_name}.yaml`
 - **Attempt = 3** → AskUserQuestion:
   ```
   "Resource {resource_name} ({resource_kind}) is still unhealthy after 3 fix attempts:
@@ -203,7 +205,9 @@ Continue to next unhealthy resource until all processed.
 
 ---
 
-### Phase 5: E2E Testing
+### Phase 5: E2E Testing & Debug
+
+#### 5a. Run E2E Tests
 
 Spawn E2E Tester subagent:
 
@@ -222,7 +226,25 @@ Namespace: {namespace}
 
 **Output**: `/tmp/e2e-results.yaml`
 
-Read the results. E2E failures are reported to the user in Phase 6 — no re-entry into debug loop.
+Read the results:
+- All tests pass → skip to Phase 6
+- Failures → read `failure_summary` to identify which resource(s) are causing failures, enter 5b
+
+#### 5b. E2E Debug Loop
+
+Same debug→fix cycle as Phase 4, but with `Phase: e2e` and max 3 attempts per resource.
+
+For each implicated resource (in dependency order):
+
+1. Spawn Debugger subagent (same as 4a, but pass `Phase: e2e`)
+2. Spawn Fix Applier subagent (same as 4b, but pass `Phase: e2e`)
+3. Re-run E2E Tester (same as 5a) to check if the failure is resolved
+4. Evaluate:
+   - **E2E test now passes for this resource** → move to next implicated resource
+   - **Still failing AND attempt < 3** → retry with incremented attempt number
+   - **Attempt = 3** → escalate to user (same AskUserQuestion format as Phase 4d)
+
+The debug/fix files (`/tmp/debug-{resource_name}.yaml`, `/tmp/fix-{resource_name}.yaml`) are the same files used in Phase 4. E2E attempts are written under `e2e_attempt_N` keys — separate from `health_attempt_N` keys, so full history is preserved.
 
 ---
 
@@ -254,8 +276,8 @@ cp /tmp/deploy-state.yaml {project_path}/.rhoai/deploy-report.yaml
 - Fix resources in dependency order (leaves first)
 - Read `unhealthy_resources` field first from state file
 - Let subagents handle diagnosis and fixing — keep orchestration clean
-- Escalate to user after 3 failed attempts per resource
-- Report E2E failures clearly without re-entering debug loop
+- Escalate to user after 3 failed attempts per resource per phase (health and e2e are separate)
+- Debug E2E failures using the same debug→fix cycle with `Phase: e2e`
 
 ### DON'T (never do any of these):
 - Never read subagent prompt files in the main agent
@@ -263,4 +285,4 @@ cp /tmp/deploy-state.yaml {project_path}/.rhoai/deploy-report.yaml
 - Never change the intention of the original application flow
 - Never apply source code changes not related to OpenShift without user approval
 - Never skip health scan after a fix (always re-scan full namespace)
-- Never enter another debug loop after E2E failures — just report clearly
+- Never exceed 3 debug attempts per resource per phase

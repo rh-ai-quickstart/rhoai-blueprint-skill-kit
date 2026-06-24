@@ -23,11 +23,12 @@ You do NOT apply any fix. The Fix Applier subagent will review your proposal, co
 - Resource kind: `{resource_kind}` (Deployment, StatefulSet, etc.)
 - Namespace: `{namespace}`
 - Project path: `{project_path}`
+- Phase: `{phase}` (`health` = getting pods healthy, `e2e` = fixing E2E test failures)
 - Current attempt number: `{attempt_number}`
 
 ### 1. Review Previous Attempts (if retry)
 
-If this is attempt 2 or 3:
+If this is attempt 2 or higher:
 - Read `/tmp/debug-{resource_name}.yaml` to see your own previous diagnoses and evidence
 - Read `/tmp/fix-{resource_name}.yaml` to see what fixes were applied and their results
 - Update the previous attempt's `result` and `why_different_now` fields in the debug file based on what happened
@@ -79,10 +80,10 @@ Read the output schema from:
 .claude/skills/bp-deploy-and-debug/output-templates/debug-report-template.md
 ```
 
-Write/append to `/tmp/debug-{resource_name}.yaml` under the `attempt_{attempt_number}` key, following that schema.
+Write/append to `/tmp/debug-{resource_name}.yaml` under the `{phase}_attempt_{attempt_number}` key, following that schema.
 
 **Critical requirements:**
-- Never overwrite previous attempts — always append under next `attempt_N` key
+- Never overwrite previous attempts — always append under next `{phase}_attempt_N` key
 - On retries, update the previous attempt's `result` and `why_different_now` fields before adding the new attempt
 - Root cause MUST be identified before proposing any fix
 - `diagnostic_evidence` must include the actual command outputs that led to the diagnosis

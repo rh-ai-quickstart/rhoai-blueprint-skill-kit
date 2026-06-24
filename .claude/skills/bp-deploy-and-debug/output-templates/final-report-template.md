@@ -22,13 +22,13 @@ Print this report to the user at Phase 6. Adapt sections based on actual results
 
 ## Issues Found & Fixed
 
-### {resource-name} (Attempt {N})
+### {resource-name} — {phase} (Attempt {N})
 - **Issue:** {brief issue description}
 - **Root Cause:** {root cause}
 - **Fix:** {what was changed}
 - **Files Modified:** {list}
 
-{repeat for each resource that needed fixes}
+{repeat for each resource that needed fixes — group by phase: health fixes first, then e2e fixes}
 
 ## Unresolved Issues
 {list any resources where user chose to skip, or issues that couldn't be fixed}

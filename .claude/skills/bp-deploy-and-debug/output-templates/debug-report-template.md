@@ -2,7 +2,7 @@
 
 Write/append to `/tmp/debug-{resource_name}.yaml` with this structure.
 
-**Important:** Each attempt is tracked under an `attempt_N` parent key. On retries, append a new `attempt_N` section — do NOT overwrite previous attempts. This preserves full diagnostic history across all attempts.
+**Important:** Each attempt is tracked under a `{phase}_attempt_N` key (phase is `health` or `e2e`). On retries, append a new `{phase}_attempt_N` section — do NOT overwrite previous attempts. This preserves full diagnostic history across both phases.
 
 **Order matters:** Root cause FIRST, then proposed fix. Never propose a fix without a clear root cause.
 
@@ -11,7 +11,8 @@ resource: app-server
 kind: Deployment
 namespace: myns
 
-attempt_1:
+# Key format: {phase}_attempt_{N} — phase is "health" or "e2e"
+health_attempt_1:
   # Root cause — identified FIRST before any fix is proposed
   root_cause:
     summary: "SCC restricted-v2 prevents write to /app/data, container runs as non-root but /app/data has root ownership from image build"
@@ -37,7 +38,7 @@ attempt_1:
   result: failed
   why_different_now: "Storage issue fixed but revealed networking issue — pod now starts but crashes on DB connection"
 
-attempt_2:
+health_attempt_2:
   # Root cause — identified FIRST before any fix is proposed
   root_cause:
     summary: "POSTGRES_HOST env var set to 'postgresql' but service name is 'postgresql-svc'"
@@ -64,8 +65,8 @@ attempt_2:
 
 ## On Retries
 
-When this is attempt 2 or 3:
-1. Read your own previous attempts in `/tmp/debug-{resource_name}.yaml` to see what you already diagnosed
+When this is attempt 2 or higher:
+1. Read your own previous `{phase}_attempt_*` entries in `/tmp/debug-{resource_name}.yaml` to see what you already diagnosed
 2. Read `/tmp/fix-{resource_name}.yaml` to see what fixes were applied and their results
 3. Update the previous attempt's `result` and `why_different_now` fields based on what happened since that attempt
 4. Do NOT propose the same fix that already failed

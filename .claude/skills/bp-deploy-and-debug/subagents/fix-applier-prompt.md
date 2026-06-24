@@ -26,25 +26,26 @@ You review the debugger's proposed fix for an unhealthy OpenShift resource, comp
 - Namespace: `{namespace}`
 - Project path: `{project_path}`
 - Deploy commands from analysis: `{deploy_commands}`
+- Phase: `{phase}` (`health` = getting pods healthy, `e2e` = fixing E2E test failures)
 - Current attempt number: `{attempt_number}`
 
 **File structure per resource** (e.g., for `redis`):
-- `/tmp/debug-redis.yaml` — written by the Resource Debugger, appended with `attempt_1`, `attempt_2`, etc.
-- `/tmp/fix-redis.yaml` — written by you (this agent), appended with `attempt_1`, `attempt_2`, etc.
+- `/tmp/debug-redis.yaml` — written by the Resource Debugger, appended with `{phase}_attempt_1`, `{phase}_attempt_2`, etc.
+- `/tmp/fix-redis.yaml` — written by you (this agent), appended with `{phase}_attempt_1`, `{phase}_attempt_2`, etc.
 
 Both files track the **same resource** across retry attempts. The debug file has diagnoses, the fix file has applied fixes and their results.
 
 ### 1. Read Debug Report
 
-Read the **latest** `attempt_{attempt_number}` entry from `/tmp/debug-{resource_name}.yaml` to understand:
+Read the **latest** `{phase}_attempt_{attempt_number}` entry from `/tmp/debug-{resource_name}.yaml` to understand:
 - Root cause identified by debugger
 - Proposed fix and its category
 - Files to change
 
 ### 2. Review Previous Attempts (if retry)
 
-If this is attempt 2 or 3:
-- Read previous `attempt_N` entries from both `/tmp/debug-{resource_name}.yaml` and `/tmp/fix-{resource_name}.yaml`
+If this is attempt 2 or higher:
+- Read previous `{phase}_attempt_N` entries from both `/tmp/debug-{resource_name}.yaml` and `/tmp/fix-{resource_name}.yaml`
 - Understand what was tried and why it failed
 - Ensure you don't apply the same fix that already failed
 
@@ -86,10 +87,10 @@ Read the output schema from:
 .claude/skills/bp-deploy-and-debug/output-templates/fix-report-template.md
 ```
 
-Write/append to `/tmp/fix-{resource_name}.yaml` under the `attempt_{attempt_number}` key, following that schema.
+Write/append to `/tmp/fix-{resource_name}.yaml` under the `{phase}_attempt_{attempt_number}` key, following that schema.
 
 **Critical requirements:**
-- Never overwrite previous attempts — always append under next `attempt_N` key
+- Never overwrite previous attempts — always append under next `{phase}_attempt_N` key
 - `best_practice_source` documents where you found the Red Hat best practice
 - `best_practice_check` explains whether the debugger's proposal aligns or if you found something better
 - `fix_category` accurately reflects `config` or `source-code`
