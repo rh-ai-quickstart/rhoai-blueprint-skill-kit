@@ -51,6 +51,8 @@ Namespace: {namespace}
 
 Verifies login, and namespace existence — prompts user interactively if anything needs fixing. Returns `cluster-access-validated` on success.
 
+**Output validation**: If the subagent returns no text or its return text does not contain `cluster-access-validated`, treat it as a validation failure and re-run the subagent (max 2 retries). If it still fails after retries, stop and report the cluster access failure to the user.
+
 #### 1b. Spawn Project Analyzer Subagent
 
 ```python
