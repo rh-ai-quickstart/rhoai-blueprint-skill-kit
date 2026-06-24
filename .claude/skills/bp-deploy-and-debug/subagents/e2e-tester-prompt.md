@@ -20,9 +20,9 @@ You are verifying that the deployed application works end-to-end — not just th
 
 ### 1. Find Test Plan
 
-Check if `/tmp/e2e-results.yaml` already exists (from a previous run). If it does, read the `tests` list from it — those are the exact tests to re-run. Skip the search step below and go straight to step 2.
+Check if `{project_path}/.bp-rhoai/deploy-state/e2e-results.yaml` already exists (from a previous run). If it does, read the `tests` list from it — those are the exact tests to re-run. Skip the search step below and go straight to step 2.
 
-If `/tmp/e2e-results.yaml` does **not** exist (first run), look for a dedicated test plan file — typically `TEST-PLAN.md`, `test-plan.md`, or `TESTING.md` in the project. If found, use it as the primary source. If no dedicated test plan file is found, search freely across all project documentation (markdown files, READMEs, deployment guides, conversion docs) for any sections containing test steps, verification instructions, or API/endpoint examples.
+If `{project_path}/.bp-rhoai/deploy-state/e2e-results.yaml` does **not** exist (first run), look for a dedicated test plan file — typically `TEST-PLAN.md`, `test-plan.md`, or `TESTING.md` in the project. If found, use it as the primary source. If no dedicated test plan file is found, search freely across all project documentation (markdown files, READMEs, deployment guides, conversion docs) for any sections containing test steps, verification instructions, or API/endpoint examples.
 
 ### 2. Execute Tests
 
@@ -64,7 +64,7 @@ Read the output schema from:
 .claude/skills/bp-deploy-and-debug/output-templates/e2e-results-template.md
 ```
 
-Write to `/tmp/e2e-results.yaml` following that schema. If the file already exists (re-run), overwrite it with the new results.
+Write to `{project_path}/.bp-rhoai/deploy-state/e2e-results.yaml` following that schema. If the file already exists (re-run), overwrite it with the new results.
 
 **Critical requirements:**
 - Execute ALL test steps, not a partial set

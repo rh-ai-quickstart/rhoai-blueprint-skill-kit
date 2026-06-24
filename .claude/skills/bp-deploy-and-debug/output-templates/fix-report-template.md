@@ -1,6 +1,6 @@
 # Fix Report Output Schema
 
-Write/append to `/tmp/fix-{resource-name}.yaml` with this structure.
+Write/append to `{project_path}/.bp-rhoai/deploy-state/fix-{resource-name}.yaml` with this structure.
 
 **Important:** Each attempt is tracked under a `{phase}_attempt_N` key (phase is `health` or `e2e`). On retries, append a new `{phase}_attempt_N` section — do NOT overwrite previous attempts. Both the debugger and fix applier read this file on retries to understand what was already tried.
 

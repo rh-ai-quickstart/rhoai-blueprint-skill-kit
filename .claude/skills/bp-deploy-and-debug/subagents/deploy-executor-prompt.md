@@ -19,10 +19,10 @@ You validate the namespace state before deployment, ensure API keys are set, and
 ### 1. Read Deploy Commands
 
 ```bash
-yq eval '.deploy_commands' /tmp/deploy-analysis.yaml
+yq eval '.deploy_commands' {project_path}/.bp-rhoai/deploy-state/deploy-analysis.yaml
 ```
 
-Also read `deployment_method` and `expected_resources` from `/tmp/deploy-analysis.yaml`.
+Also read `deployment_method` and `expected_resources` from `{project_path}/.bp-rhoai/deploy-state/deploy-analysis.yaml`.
 
 ### 2. Validate Pre-Deployment State
 
@@ -50,7 +50,7 @@ Do NOT wait for pods to become Ready — just execute the commands and confirm e
 
 ## Output
 
-Write to `/tmp/deploy-execute-status.yaml` and return the same YAML as text to the main agent:
+Write to `{project_path}/.bp-rhoai/deploy-state/deploy-execute-status.yaml` and return the same YAML as text to the main agent:
 
 ```yaml
 deploy-execute-status: success | failed

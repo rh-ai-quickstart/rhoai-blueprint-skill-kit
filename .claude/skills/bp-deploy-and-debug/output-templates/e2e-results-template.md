@@ -1,6 +1,6 @@
 # E2E Results Output Schema
 
-Write `/tmp/e2e-results.yaml` with this structure:
+Write `{project_path}/.bp-rhoai/deploy-state/e2e-results.yaml` with this structure:
 
 ```yaml
 test_plan_source: TEST-PLAN.md  # or wherever test steps were found

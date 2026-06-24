@@ -16,11 +16,11 @@ The main agent reads ONLY the `unhealthy_resources` and `healthy_resources` fiel
 
 **Input Parameters:**
 - Namespace: `{namespace}`
-- Expected resources field extracted from `/tmp/deploy-analysis.yaml` (only the `expected_resources` field — do NOT read the full analysis file)
+- Expected resources field extracted from `{project_path}/.bp-rhoai/deploy-state/deploy-analysis.yaml` (only the `expected_resources` field — do NOT read the full analysis file)
 
 ### 1. Extract Expected Resources
 
-Read `/tmp/deploy-analysis.yaml` and extract ONLY the `expected_resources` field. Do not load the rest of the file into your context.
+Read `{project_path}/.bp-rhoai/deploy-state/deploy-analysis.yaml` and extract ONLY the `expected_resources` field. Do not load the rest of the file into your context.
 
 ### 2. Scan Namespace
 
@@ -48,7 +48,7 @@ Check each expected resource:
 
 ### 4. Check Previous State
 
-If `/tmp/deploy-state.yaml` already exists (this is a re-scan after a fix):
+If `{project_path}/.bp-rhoai/deploy-state/deploy-state.yaml` already exists (this is a re-scan after a fix):
 - Read the previous state
 - Preserve `debug_attempts` counts from previous state
 - Track what changed in `changes_since_last_scan`
@@ -62,7 +62,7 @@ Read the output schema from:
 .claude/skills/bp-deploy-and-debug/output-templates/deploy-state-template.md
 ```
 
-Write to `/tmp/deploy-state.yaml` following that schema.
+Write to `{project_path}/.bp-rhoai/deploy-state/deploy-state.yaml` following that schema.
 
 **Critical requirements:**
 - `unhealthy_resources` and `healthy_resources` MUST be top-level fields

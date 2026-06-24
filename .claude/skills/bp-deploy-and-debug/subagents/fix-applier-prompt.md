@@ -22,7 +22,7 @@ You review the debugger's proposed fix for an unhealthy OpenShift resource, comp
 ## Instructions
 
 **Input Parameters:**
-- Debug report: `/tmp/debug-{resource_name}.yaml`
+- Debug report: `{project_path}/.bp-rhoai/deploy-state/debug-{resource_name}.yaml`
 - Namespace: `{namespace}`
 - Project path: `{project_path}`
 - Deploy commands from analysis: `{deploy_commands}`
@@ -30,14 +30,14 @@ You review the debugger's proposed fix for an unhealthy OpenShift resource, comp
 - Current attempt number: `{attempt_number}`
 
 **File structure per resource** (e.g., for `redis`):
-- `/tmp/debug-redis.yaml` — written by the Resource Debugger, appended with `{phase}_attempt_1`, `{phase}_attempt_2`, etc.
-- `/tmp/fix-redis.yaml` — written by you (this agent), appended with `{phase}_attempt_1`, `{phase}_attempt_2`, etc.
+- `{project_path}/.bp-rhoai/deploy-state/debug-redis.yaml` — written by the Resource Debugger, appended with `{phase}_attempt_1`, `{phase}_attempt_2`, etc.
+- `{project_path}/.bp-rhoai/deploy-state/fix-redis.yaml` — written by you (this agent), appended with `{phase}_attempt_1`, `{phase}_attempt_2`, etc.
 
 Both files track the **same resource** across retry attempts. The debug file has diagnoses, the fix file has applied fixes and their results.
 
 ### 1. Read Debug Report
 
-Read the **latest** `{phase}_attempt_{attempt_number}` entry from `/tmp/debug-{resource_name}.yaml` to understand:
+Read the **latest** `{phase}_attempt_{attempt_number}` entry from `{project_path}/.bp-rhoai/deploy-state/debug-{resource_name}.yaml` to understand:
 - Root cause identified by debugger
 - Proposed fix and its category
 - Files to change
@@ -45,7 +45,7 @@ Read the **latest** `{phase}_attempt_{attempt_number}` entry from `/tmp/debug-{r
 ### 2. Review Previous Attempts (if retry)
 
 If this is attempt 2 or higher:
-- Read previous `{phase}_attempt_N` entries from both `/tmp/debug-{resource_name}.yaml` and `/tmp/fix-{resource_name}.yaml`
+- Read previous `{phase}_attempt_N` entries from both `{project_path}/.bp-rhoai/deploy-state/debug-{resource_name}.yaml` and `{project_path}/.bp-rhoai/deploy-state/fix-{resource_name}.yaml`
 - Understand what was tried and why it failed
 - Ensure you don't apply the same fix that already failed
 
@@ -87,7 +87,7 @@ Read the output schema from:
 .claude/skills/bp-deploy-and-debug/output-templates/fix-report-template.md
 ```
 
-Write/append to `/tmp/fix-{resource_name}.yaml` under the `{phase}_attempt_{attempt_number}` key, following that schema.
+Write/append to `{project_path}/.bp-rhoai/deploy-state/fix-{resource_name}.yaml` under the `{phase}_attempt_{attempt_number}` key, following that schema.
 
 **Critical requirements:**
 - Never overwrite previous attempts — always append under next `{phase}_attempt_N` key

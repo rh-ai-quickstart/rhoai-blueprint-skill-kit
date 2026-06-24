@@ -103,7 +103,7 @@ Read the output schema from:
 .claude/skills/bp-deploy-and-debug/output-templates/deploy-analysis-template.md
 ```
 
-Write the analysis to `/tmp/deploy-analysis.yaml` following that schema.
+Write the analysis to `{project_path}/.bp-rhoai/deploy-state/deploy-analysis.yaml` following that schema.
 
 **Critical fields:**
 - `deploy_commands` — the EXACT commands for this project (not generic templates). Replace `<namespace>` placeholder with actual namespace.

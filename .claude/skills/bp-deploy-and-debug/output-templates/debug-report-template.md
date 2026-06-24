@@ -1,6 +1,6 @@
 # Debug Report Output Schema
 
-Write/append to `/tmp/debug-{resource_name}.yaml` with this structure.
+Write/append to `{project_path}/.bp-rhoai/deploy-state/debug-{resource_name}.yaml` with this structure.
 
 **Important:** Each attempt is tracked under a `{phase}_attempt_N` key (phase is `health` or `e2e`). On retries, append a new `{phase}_attempt_N` section — do NOT overwrite previous attempts. This preserves full diagnostic history across both phases.
 
@@ -66,8 +66,8 @@ health_attempt_2:
 ## On Retries
 
 When this is attempt 2 or higher:
-1. Read your own previous `{phase}_attempt_*` entries in `/tmp/debug-{resource_name}.yaml` to see what you already diagnosed
-2. Read `/tmp/fix-{resource_name}.yaml` to see what fixes were applied and their results
+1. Read your own previous `{phase}_attempt_*` entries in `{project_path}/.bp-rhoai/deploy-state/debug-{resource_name}.yaml` to see what you already diagnosed
+2. Read `{project_path}/.bp-rhoai/deploy-state/fix-{resource_name}.yaml` to see what fixes were applied and their results
 3. Update the previous attempt's `result` and `why_different_now` fields based on what happened since that attempt
 4. Do NOT propose the same fix that already failed
 5. The new root cause may be different (previous fix resolved one layer, exposed another)

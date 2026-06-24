@@ -53,7 +53,16 @@ Verifies login, and namespace existence — prompts user interactively if anythi
 
 **Output validation**: If the subagent returns no text or its return text does not contain `cluster-access-validated`, treat it as a validation failure and re-run the subagent (max 2 retries). If it still fails after retries, stop and report the cluster access failure to the user.
 
-#### 1b. Spawn Project Analyzer Subagent
+#### 1b. Create State Directory
+
+```bash
+if [ -d "{project_path}/.bp-rhoai/deploy-state" ]; then
+  mv "{project_path}/.bp-rhoai/deploy-state" "{project_path}/.bp-rhoai/deploy-state.old.$(date +%Y%m%d-%H%M%S)"
+fi
+mkdir -p "{project_path}/.bp-rhoai/deploy-state"
+```
+
+#### 1c. Spawn Project Analyzer Subagent
 
 ```python
 Agent(
@@ -68,7 +77,7 @@ Namespace: {namespace}
 )
 ```
 
-**Output**: `/tmp/deploy-analysis.yaml` with deploy commands, expected resources, dependency order
+**Output**: `{project_path}/.bp-rhoai/deploy-state/deploy-analysis.yaml` with deploy commands, expected resources, dependency order
 
 Read the analysis result. Understand the deployment method, components, and dependency graph.
 
@@ -107,12 +116,12 @@ Read and follow instructions from:
 .claude/skills/bp-deploy-and-debug/subagents/health-scanner-prompt.md
 
 Namespace: {namespace}
-Expected resources file: /tmp/deploy-analysis.yaml (read ONLY the expected_resources field)
+Expected resources file: {project_path}/.bp-rhoai/deploy-state/deploy-analysis.yaml (read ONLY the expected_resources field)
 """
 )
 ```
 
-**Output**: `/tmp/deploy-state.yaml`
+**Output**: `{project_path}/.bp-rhoai/deploy-state/deploy-state.yaml`
 
 Read `unhealthy_resources` field from the state file.
 - If empty (all healthy) → skip to Phase 5
@@ -122,7 +131,7 @@ Read `unhealthy_resources` field from the state file.
 
 ### Phase 4: Debug Loop
 
-Read `dependency_order` from `/tmp/deploy-analysis.yaml` to sort unhealthy resources — fix leaves first (resources with no dependencies), then work up.
+Read `dependency_order` from `{project_path}/.bp-rhoai/deploy-state/deploy-analysis.yaml` to sort unhealthy resources — fix leaves first (resources with no dependencies), then work up.
 
 **For each unhealthy resource** (in dependency order):
 
@@ -145,14 +154,14 @@ Current attempt number (attempt_number): {attempt_number}
 )
 ```
 
-**Output**: `/tmp/debug-{resource_name}.yaml` — appended with `health_attempt_{N}` entry containing root cause and proposed fix
+**Output**: `{project_path}/.bp-rhoai/deploy-state/debug-{resource_name}.yaml` — appended with `health_attempt_{N}` entry containing root cause and proposed fix
 
 #### 4b. Spawn Fix Applier Subagent
 
 Extract deploy commands to pass to the fix applier:
 
 ```bash
-yq eval '.deploy_commands' /tmp/deploy-analysis.yaml
+yq eval '.deploy_commands' {project_path}/.bp-rhoai/deploy-state/deploy-analysis.yaml
 ```
 
 ```python
@@ -162,7 +171,7 @@ Agent(
 Read and follow instructions from:
 .claude/skills/bp-deploy-and-debug/subagents/fix-applier-prompt.md
 
-Debug report: /tmp/debug-{resource_name}.yaml
+Debug report: {project_path}/.bp-rhoai/deploy-state/debug-{resource_name}.yaml
 Namespace: {namespace}
 Project path: {project_path}
 Deploy commands: {deploy_commands}
@@ -172,13 +181,13 @@ Current attempt number (attempt_number): {attempt_number}
 )
 ```
 
-**Output**: `/tmp/fix-{resource_name}.yaml` updated with `health_attempt_{N}` entry
+**Output**: `{project_path}/.bp-rhoai/deploy-state/fix-{resource_name}.yaml` updated with `health_attempt_{N}` entry
 
 #### 4c. Re-scan Health
 
 Spawn Health Scanner subagent (same as Phase 3) to re-scan ALL resources.
 
-**Output**: Updated `/tmp/deploy-state.yaml`
+**Output**: Updated `{project_path}/.bp-rhoai/deploy-state/deploy-state.yaml`
 
 #### 4d. Evaluate Result
 
@@ -186,7 +195,7 @@ Read `unhealthy_resources` from updated state file:
 
 - **Resource now healthy** → move to next unhealthy resource
 - **Still unhealthy AND attempt < 3** → back to 4a with incremented attempt number
-  - Debugger reads previous `health_attempt_*` entries from both `/tmp/debug-{resource_name}.yaml` and `/tmp/fix-{resource_name}.yaml`
+  - Debugger reads previous `health_attempt_*` entries from both `{project_path}/.bp-rhoai/deploy-state/debug-{resource_name}.yaml` and `{project_path}/.bp-rhoai/deploy-state/fix-{resource_name}.yaml`
 - **Attempt = 3** → AskUserQuestion:
   ```
   "Resource {resource_name} ({resource_kind}) is still unhealthy after 3 fix attempts:
@@ -226,7 +235,7 @@ Namespace: {namespace}
 )
 ```
 
-**Output**: `/tmp/e2e-results.yaml`
+**Output**: `{project_path}/.bp-rhoai/deploy-state/e2e-results.yaml`
 
 Read the results:
 - All tests pass → skip to Phase 6
@@ -246,7 +255,7 @@ For each implicated resource (in dependency order):
    - **Still failing AND attempt < 3** → retry with incremented attempt number
    - **Attempt = 3** → escalate to user (same AskUserQuestion format as Phase 4d)
 
-The debug/fix files (`/tmp/debug-{resource_name}.yaml`, `/tmp/fix-{resource_name}.yaml`) are the same files used in Phase 4. E2E attempts are written under `e2e_attempt_N` keys — separate from `health_attempt_N` keys, so full history is preserved.
+The debug/fix files (`{project_path}/.bp-rhoai/deploy-state/debug-{resource_name}.yaml`, `{project_path}/.bp-rhoai/deploy-state/fix-{resource_name}.yaml`) are the same files used in Phase 4. E2E attempts are written under `e2e_attempt_N` keys — separate from `health_attempt_N` keys, so full history is preserved.
 
 ---
 
@@ -257,16 +266,10 @@ The debug/fix files (`/tmp/debug-{resource_name}.yaml`, `/tmp/fix-{resource_name
 Generate and print the final report including:
 - Deployment status
 - Resources deployed and final state
-- Issues found and fixes applied (read from `/tmp/fix-*.yaml` files)
+- Issues found and fixes applied (read from `{project_path}/.bp-rhoai/deploy-state/fix-*.yaml` files)
 - E2E test results (pass/fail per test)
 - If E2E failures: clear description of what failed and why
 - Files modified during debugging
-
-Copy state to project directory:
-```bash
-mkdir -p {project_path}/.rhoai
-cp /tmp/deploy-state.yaml {project_path}/.rhoai/deploy-report.yaml
-```
 
 ---
 

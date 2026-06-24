@@ -1,6 +1,6 @@
 # Deploy State Output Schema
 
-Write `/tmp/deploy-state.yaml` with this structure.
+Write `{project_path}/.bp-rhoai/deploy-state/deploy-state.yaml` with this structure.
 
 **Important:** `unhealthy_resources` and `healthy_resources` MUST be top-level fields so the main agent can read the actionable list first without parsing the full file.
 
@@ -64,7 +64,7 @@ changes_since_last_scan:
 
 ## Update Rules
 
-When updating an existing `/tmp/deploy-state.yaml`:
+When updating an existing `{project_path}/.bp-rhoai/deploy-state/deploy-state.yaml`:
 - Preserve `debug_attempts` counts from the previous state
 - Update `changes_since_last_scan` by comparing current vs previous status
 - Keep `unhealthy_resources` and `healthy_resources` lists accurate

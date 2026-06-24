@@ -55,10 +55,5 @@ Print this report to the user at Phase 6. Adapt sections based on actual results
 - `deploy/helm/values.yaml` — updated storage class name
 
 ## Deploy Report
-Full state saved to: `{project_path}/.rhoai/deploy-report.yaml`
+Full state saved to: `{project_path}/.bp-rhoai/deploy-state/deploy-report.yaml`
 ```
-
-## Copy State to Project
-
-At the end, copy `/tmp/deploy-state.yaml` to `{project_path}/.rhoai/deploy-report.yaml`.
-Create the `.rhoai/` directory if it doesn't exist.

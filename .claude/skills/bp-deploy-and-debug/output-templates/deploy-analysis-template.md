@@ -1,6 +1,6 @@
 # Deploy Analysis Output Schema
 
-Write `/tmp/deploy-analysis.yaml` with this structure:
+Write `{project_path}/.bp-rhoai/deploy-state/deploy-analysis.yaml` with this structure:
 
 ```yaml
 project_path: /absolute/path/to/project
