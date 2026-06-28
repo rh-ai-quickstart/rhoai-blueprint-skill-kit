@@ -1,7 +1,7 @@
 ---
 name: bp-convert-to-rhoai
 description: Convert an NVIDIA Blueprint to RHOAI-compatible version using proven patterns
-argument-hint: <path-to-blueprint-directory>
+argument-hint: <path-to-blueprint-directory-or-git-url>
 allowed-tools: Bash, Read, Write, Edit, Agent, mcp__plugin_context7_context7__query-docs, mcp__plugin_context7_context7__resolve-library-id, AskUserQuestion
 ---
 
@@ -19,7 +19,7 @@ Generate minimal, conditional modifications to the blueprint that:
 
 ## Input
 
-User provides a **local path** to an NVIDIA Blueprint directory (not a GitHub URL).
+User provides either a **local path** to an NVIDIA Blueprint directory OR a **git URL** (HTTPS/SSH).
 
 ## Conversion Philosophy
 
@@ -44,6 +44,27 @@ User provides a **local path** to an NVIDIA Blueprint directory (not a GitHub UR
 - Enable at deploy time: `export OPENSHIFT_MODE=true; oc apply ...`
 
 ## Workflow
+
+### Phase 0: Input Resolution
+
+Determine whether user input is a local path or a git URL. If it's a git URL, clone it to a well-known local directory.
+
+```bash
+INPUT="<user-provided-input>"
+
+if echo "$INPUT" | grep -qE '^(https?://|git@|git://)'; then
+  REPO_NAME=$(basename "$INPUT" .git)
+  mkdir -p ~/rhoai-blueprints
+  git clone "$INPUT" ~/rhoai-blueprints/"$REPO_NAME"
+  blueprint_dir=~/rhoai-blueprints/"$REPO_NAME"
+else
+  blueprint_dir="$INPUT"
+fi
+```
+
+**Output**: `blueprint_dir` — local path used by all subsequent phases
+
+---
 
 ### Phase 1: Blueprint Analysis
 
