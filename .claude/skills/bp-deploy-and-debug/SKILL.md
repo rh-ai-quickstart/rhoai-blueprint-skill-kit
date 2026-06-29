@@ -1,7 +1,7 @@
 ---
 name: bp-deploy-and-debug
 description: Deploy a converted RHOAI blueprint to OpenShift, debug failures, and verify end-to-end
-argument-hint: <path-to-project-directory> <namespace>
+argument-hint: <path-to-project-directory> [namespace]
 allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, WebSearch
 ---
 
@@ -17,7 +17,7 @@ Deploy the blueprint, get all resources healthy, and pass the full TEST-PLAN.md 
 
 User provides:
 - **Project path**: Local path to a blueprint directory that already has OpenShift support (YAML/Helm files, deployment docs)
-- **Namespace**: Target OpenShift namespace for deployment
+- **Namespace** _(optional)_: Target OpenShift namespace. If omitted, the Cluster Access Validator subagent derives a unique default namespace (see Phase 1a).
 
 ## Critical Rules
 
@@ -38,20 +38,23 @@ User provides:
 #### 1a. Spawn Cluster Access Validator Subagent
 
 ```python
-Agent(
+result = Agent(
     description="Validate cluster access",
     prompt=f"""
 Read and follow instructions from:
 .claude/skills/bp-deploy-and-debug/subagents/cluster-access-validator-prompt.md
 
-Namespace: {namespace}
+Namespace: {namespace if provided, else ""}
 """
 )
+namespace = result.split("namespace:")[1].strip()  # extract from "namespace: <value>"
 ```
 
-Verifies login, and namespace existence — prompts user interactively if anything needs fixing. Returns `cluster-access-validated` on success.
+Verifies login and namespace existence — prompts user interactively if anything needs fixing. If no namespace was provided, the subagent derives a unique default. Returns `namespace: <value>` on success — this serves as the success marker for the subagent.
 
-**Output validation**: If the subagent returns no text or its return text does not contain `cluster-access-validated`, treat it as a validation failure and re-run the subagent (max 2 retries). If it still fails after retries, stop and report the cluster access failure to the user.
+**Output validation**: If the subagent returns no text or the returned text does not contain `namespace:`, treat it as a validation failure and re-run the subagent (max 2 retries). If it still fails after retries, stop and report the cluster access failure to the user. Extract the namespace value from the `namespace:` line.
+
+Use the returned namespace as `{namespace}` for all subsequent phases.
 
 #### 1b. Create State Directory
 
