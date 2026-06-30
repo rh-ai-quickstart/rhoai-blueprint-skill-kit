@@ -127,6 +127,7 @@
             padding: 30px;
             border-radius: 12px;
             margin: 30px 0;
+            text-align: center;
         }
 
         .tag {
@@ -352,13 +353,15 @@ flowchart TD
         <div class="slide">
             <h2>Where It Fits in the Pipeline</h2>
             <div class="mermaid">
-flowchart LR
-    A["NVIDIA Blueprint"] -->|Step 1| B["/bp-extract-blueprint-knowledge"]
+flowchart TD
+    A["NVIDIA Blueprint"] -->|Step 1| B["/bp-extract-knowledge"]
     B --> C[("Knowledge Base")]
     A -->|Step 2| D["/bp-convert-to-rhoai"]
     C -->|Load Patterns| D
     D -->|Step 3| E["/bp-add-nim-serving"]
+    D -.->|"..."| X["Other serving skills"]
     E --> F["Helm Chart with NIM Serving"]
+    X -.-> F
     F -->|Step 4| G["/bp-deploy-and-debug"]
     G --> H["Running on RHOAI"]
 
@@ -368,6 +371,7 @@ flowchart LR
     style G fill:#00b894,color:#fff
     style C fill:#ffeaa7
     style H fill:#55efc4
+    style X fill:#f0f0f0,stroke:#999,stroke-dasharray: 5 5,color:#999
             </div>
             <div class="key-point">
                 <strong>Prerequisite:</strong> Blueprint must be a Helm chart first. If it's still docker-compose, the skill tells the user to run <code>/bp-convert-to-rhoai</code> first.
@@ -389,7 +393,8 @@ flowchart LR
                 primaryBorderColor: '#764ba2',
                 lineColor: '#764ba2',
                 secondaryColor: '#ffeaa7',
-                tertiaryColor: '#f5f7fa'
+                tertiaryColor: '#f5f7fa',
+                fontSize: '18px'
             }
         });
     </script>
