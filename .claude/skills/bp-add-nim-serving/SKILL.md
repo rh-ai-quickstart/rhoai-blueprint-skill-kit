@@ -1,5 +1,5 @@
 ---
-name: bp-deploy-nim
+name: bp-add-nim-serving
 description: Use when a blueprint contains NIM models that need to be deployed via RHOAI NIM serving
 argument-hint: <path-to-blueprint-directory>
 allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion
@@ -30,7 +30,7 @@ nim_models = Agent(
     description="Scan blueprint for NIM models",
     prompt=f"""
 Read and follow instructions from:
-.claude/skills/bp-deploy-nim/subagents/nim-model-analyzer-prompt.md
+.claude/skills/bp-add-nim-serving/subagents/nim-model-analyzer-prompt.md
 
 Blueprint directory: {blueprint_dir}
 """
@@ -40,7 +40,7 @@ Blueprint directory: {blueprint_dir}
 **Output**: List of NIM models with image, GPU, PVC, port, and service name details.
 
 **Guard**: If `deployment_type` is `docker-compose`, stop and tell the user:
-> "This blueprint hasn't been converted to a Helm chart yet. Run `/bp-convert-to-rhoai` first to create the Helm chart, then re-run `/bp-deploy-nim` to add NIM serving resources."
+> "This blueprint hasn't been converted to a Helm chart yet. Run `/bp-convert-to-rhoai` first to create the Helm chart, then re-run `/bp-add-nim-serving` to add NIM serving resources."
 
 ---
 
@@ -89,7 +89,7 @@ nim_resources = Agent(
     description="Generate NIM ServingRuntime + InferenceService + PVC templates",
     prompt=f"""
 Read and follow instructions from:
-.claude/skills/bp-deploy-nim/subagents/nim-resource-generator-prompt.md
+.claude/skills/bp-add-nim-serving/subagents/nim-resource-generator-prompt.md
 
 **Generation context:**
 - Blueprint directory: {blueprint_dir}
@@ -97,7 +97,7 @@ Read and follow instructions from:
 - Models: {nim_models}
 - User decisions: {user_decisions}
 - Existing secrets: {existing_secrets}
-- Knowledge base dir: .claude/skills/bp-deploy-nim/knowledge-base/
+- Knowledge base dir: .claude/skills/bp-add-nim-serving/knowledge-base/
 """,
 )
 ```
@@ -115,7 +115,7 @@ endpoint_rewiring = Agent(
     description="Rewire NIM endpoints to InferenceService URLs",
     prompt=f"""
 Read and follow instructions from:
-.claude/skills/bp-deploy-nim/subagents/endpoint-rewiring-prompt.md
+.claude/skills/bp-add-nim-serving/subagents/endpoint-rewiring-prompt.md
 
 **Rewiring context:**
 - Blueprint directory: {blueprint_dir}
@@ -142,7 +142,7 @@ validation_report = Agent(
     description="Validate NIM deployment resources",
     prompt=f"""
 Read and follow instructions from:
-.claude/skills/bp-deploy-nim/subagents/validation-prompt.md
+.claude/skills/bp-add-nim-serving/subagents/validation-prompt.md
 
 **Validation context:**
 - Blueprint directory: {blueprint_dir}

@@ -27,8 +27,8 @@ For each NIM model provided, generate Helm templates (or standalone YAML) for:
 
 Read these files before generating:
 ```
-.claude/skills/bp-deploy-nim/knowledge-base/nim-serving-patterns.md
-.claude/skills/bp-deploy-nim/knowledge-base/nim-prerequisites.md
+.claude/skills/bp-add-nim-serving/knowledge-base/nim-serving-patterns.md
+.claude/skills/bp-add-nim-serving/knowledge-base/nim-prerequisites.md
 ```
 
 ### 2. Generate Resources Per Model

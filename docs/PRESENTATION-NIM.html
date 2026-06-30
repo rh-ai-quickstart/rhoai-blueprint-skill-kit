@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>bp-deploy-nim - NIM Serving Deployment Skill</title>
+    <title>bp-add-nim-serving - NIM Serving Deployment Skill</title>
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
     <style>
         * {
@@ -248,7 +248,7 @@
             <h2>Skill Architecture &amp; Flow</h2>
             <div class="mermaid">
 flowchart TD
-    Start(["/bp-deploy-nim blueprint-dir"]) --> P1
+    Start(["/bp-add-nim-serving blueprint-dir"]) --> P1
 
     subgraph P1["Phase 1: NIM Model Discovery"]
         A1["nim-model-analyzer subagent"] --> A2{"Blueprint type?"}
@@ -357,7 +357,7 @@ flowchart LR
     B --> C[("Knowledge Base")]
     A -->|Step 2| D["/bp-convert-to-rhoai"]
     C -->|Load Patterns| D
-    D -->|Step 3| E["/bp-deploy-nim"]
+    D -->|Step 3| E["/bp-add-nim-serving"]
     E --> F["Helm Chart with NIM Serving"]
     F -->|Step 4| G["/bp-deploy-and-debug"]
     G --> H["Running on RHOAI"]
@@ -376,7 +376,7 @@ flowchart LR
     </div>
 
     <div class="footer">
-        <p>bp-deploy-nim | RHOAI Blueprint Skill Kit | Powered by Claude AI</p>
+        <p>bp-add-nim-serving | RHOAI Blueprint Skill Kit | Powered by Claude AI</p>
     </div>
 
     <script>
