@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>bp-add-nim-serving - NIM Serving Deployment Skill</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            overflow-x: hidden;
+        }
+
+        .presentation {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        .slide {
+            background: white;
+            border-radius: 20px;
+            padding: 60px;
+            margin-bottom: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            animation: slideIn 0.6s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        h1 {
+            font-size: 3em;
+            color: #667eea;
+            margin-bottom: 20px;
+            text-align: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        h2 {
+            font-size: 2.2em;
+            color: #764ba2;
+            margin-bottom: 30px;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        h3 {
+            font-size: 1.5em;
+            color: #555;
+            margin: 25px 0 15px 0;
+        }
+
+        .subtitle {
+            text-align: center;
+            font-size: 1.4em;
+            color: #666;
+            margin-bottom: 40px;
+        }
+
+        .key-point {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            padding: 25px;
+            border-radius: 12px;
+            margin: 20px 0;
+            border-left: 5px solid #667eea;
+        }
+
+        .key-point strong {
+            color: #764ba2;
+            font-size: 1.1em;
+        }
+
+        .two-column {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin: 30px 0;
+        }
+
+        .three-column {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            margin: 30px 0;
+        }
+
+        .card {
+            background: linear-gradient(135deg, #ffffff 0%, #f5f7fa 100%);
+            padding: 25px;
+            border-radius: 12px;
+            border: 2px solid #e0e6ed;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.2);
+        }
+
+        .card h3 {
+            color: #667eea;
+            margin-top: 0;
+        }
+
+        .mermaid {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 12px;
+            margin: 30px 0;
+            text-align: center;
+        }
+
+        .tag {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            margin: 5px 5px 5px 0;
+        }
+
+        .tag.subagent {
+            background: #764ba2;
+        }
+
+        .tag.main {
+            background: #00b894;
+        }
+
+        .footer {
+            text-align: center;
+            color: white;
+            padding: 40px;
+            font-size: 1.1em;
+        }
+
+        code {
+            background: #2d3748;
+            color: #68d391;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin: 30px 0;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 3em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .stat-label {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        ul {
+            margin: 15px 0 15px 25px;
+            line-height: 1.8;
+        }
+
+        li {
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="presentation">
+        <!-- Slide 1: Title + Why -->
+        <div class="slide">
+            <h1>NIM Serving Deployment Skill</h1>
+            <p class="subtitle">Automated NIM Model Deployment via RHOAI Native Integration</p>
+            <div class="stats">
+                <div class="stat-box">
+                    <div class="stat-number">6</div>
+                    <div class="stat-label">Phases</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-number">4</div>
+                    <div class="stat-label">Sub-Agents</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-number">3</div>
+                    <div class="stat-label">Resources per Model</div>
+                </div>
+            </div>
+            <div class="two-column">
+                <div class="card">
+                    <h3>Existing NIM Paths</h3>
+                    <ul>
+                        <li><strong>NIM Operator</strong> &mdash; Full operator lifecycle</li>
+                        <li><strong>Standalone Deployment</strong> &mdash; Raw K8s Deployment + Service</li>
+                        <li><strong>NVIDIA API</strong> &mdash; Cloud-hosted endpoints</li>
+                    </ul>
+                    <p style="margin-top: 15px; color: #999;">These paths remain untouched</p>
+                </div>
+                <div class="card">
+                    <h3>NIM Serving (New Path)</h3>
+                    <ul>
+                        <li><strong>RHOAI Native</strong> &mdash; KServe + ServingRuntime</li>
+                        <li><strong>Dashboard Parity</strong> &mdash; Same resources the UI creates</li>
+                        <li><strong>Helm Managed</strong> &mdash; Deploy with the rest of the chart</li>
+                    </ul>
+                    <p style="margin-top: 15px; color: #00b894; font-weight: bold;">Additive, disabled by default</p>
+                </div>
+            </div>
+            <div class="key-point">
+                <strong>Goal:</strong> Deploy NIM models using RHOAI's native serving (ServingRuntime + InferenceService + PVC) as Helm templates &mdash; one <code>helm install</code> for the entire blueprint.
+            </div>
+        </div>
+
+        <!-- Slide 2: Architecture Flow Diagram -->
+        <div class="slide">
+            <h2>Skill Architecture &amp; Flow</h2>
+            <div class="mermaid">
+flowchart TD
+    Start(["/bp-add-nim-serving blueprint-dir"]) --> P1
+
+    subgraph P1["Phase 1: NIM Model Discovery"]
+        A1["nim-model-analyzer subagent"] --> A2{"Blueprint type?"}
+        A2 -->|docker-compose| STOP["Stop: Run /bp-convert-to-rhoai first"]
+        A2 -->|Helm chart| A3["Model list: image, GPU, PVC, ports"]
+    end
+
+    A3 --> P2
+
+    subgraph P2["Phase 2: User Decisions"]
+        B1["Present models + resources"] --> B2{"User confirms?"}
+        B2 -->|Adjust| B1
+        B2 -->|Confirm| B3["Auto-resolve: storage class, tolerations"]
+    end
+
+    B3 --> P3
+
+    subgraph P3["Phase 3: NIM Resource Generation"]
+        C0["Load knowledge base + guardrails"] --> C1
+        C1["nim-resource-generator subagent"] --> C2["Per model generates: ServingRuntime + InferenceService + PVC"]
+        C2 --> C3["Gated: nimServing.model.enabled = false"]
+    end
+
+    C3 --> P4
+
+    subgraph P4["Phase 4: Endpoint Rewiring"]
+        D1["endpoint-rewiring subagent"] --> D2["Scan NIM endpoints in env/config"]
+        D2 --> D3["Add nimServing conditional branch"]
+    end
+
+    D3 --> P5
+
+    subgraph P5["Phase 5: Validation"]
+        E1["validation subagent"] --> E2{"Errors?"}
+        E2 -->|"Yes (retry max 3)"| E3["Fix errors"] --> E1
+        E2 -->|Clean| E4["Pass"]
+    end
+
+    E4 --> P6
+
+    subgraph P6["Phase 6: Documentation & Summary"]
+        F1["Update OpenShift docs"] --> F2["Deploy command + checklist"]
+    end
+
+    F2 --> Done(["Done: helm install ready"])
+
+    style P1 fill:#f0f4ff,stroke:#667eea,color:#333
+    style P2 fill:#f0f4ff,stroke:#667eea,color:#333
+    style P3 fill:#f0f4ff,stroke:#667eea,color:#333
+    style P4 fill:#f0f4ff,stroke:#667eea,color:#333
+    style P5 fill:#f0f4ff,stroke:#667eea,color:#333
+    style P6 fill:#f0f4ff,stroke:#667eea,color:#333
+    style STOP fill:#ffe8e8,stroke:#d63031,color:#333
+    style Done fill:#e8f8f5,stroke:#00b894,color:#333
+            </div>
+        </div>
+
+        <!-- Slide 3: Resources + Design Decisions -->
+        <div class="slide">
+            <h2>What It Generates &amp; Design Decisions</h2>
+            <div class="three-column">
+                <div class="card">
+                    <h3>ServingRuntime</h3>
+                    <ul>
+                        <li>NIM container image + tag</li>
+                        <li>GPU resource limits</li>
+                        <li>Model volume mount</li>
+                        <li>NGC API key env var</li>
+                        <li>Liveness/readiness probes</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3>InferenceService</h3>
+                    <ul>
+                        <li>Links to ServingRuntime</li>
+                        <li>PVC storage reference</li>
+                        <li>GPU tolerations</li>
+                        <li>fsGroup: 1000 (NIM UID)</li>
+                        <li>Autoscaling config</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3>PVC</h3>
+                    <ul>
+                        <li>Model cache storage</li>
+                        <li>ReadWriteOnce access</li>
+                        <li>Configurable size</li>
+                        <li>StorageClass override</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="two-column" style="margin-top: 10px;">
+                <div class="card">
+                    <h3>Additive Only</h3>
+                    <p>Never removes or wraps existing NIM paths. All generated resources are new &mdash; not replacements.</p>
+                </div>
+                <div class="card">
+                    <h3>Disabled by Default</h3>
+                    <p><code>nimServing.&lt;model&gt;.enabled: false</code> in values.yaml. Users opt in explicitly per model.</p>
+                </div>
+            </div>
+            <div class="key-point">
+                <strong>Secret Handling:</strong> Detects existing NGC secrets in the blueprint and references them. Only generates fallback Secret templates when none exist.
+            </div>
+        </div>
+
+        <!-- Slide 4: Pipeline Fit -->
+        <div class="slide">
+            <h2>Where It Fits in the Pipeline</h2>
+            <div class="mermaid">
+flowchart TD
+    A["NVIDIA Blueprint"] -->|Step 1| B["/bp-extract-knowledge"]
+    B --> C[("Knowledge Base")]
+    A -->|Step 2| D["/bp-convert-to-rhoai"]
+    C -->|Load Patterns| D
+    D -->|Step 3| E["/bp-add-nim-serving"]
+    D -.->|"..."| X["Other serving skills"]
+    E --> F["Helm Chart with NIM Serving"]
+    X -.-> F
+    F -->|Step 4| G["/bp-deploy-and-debug"]
+    G --> H["Running on RHOAI"]
+
+    style B fill:#667eea,color:#fff
+    style D fill:#764ba2,color:#fff
+    style E fill:#e94560,color:#fff
+    style G fill:#00b894,color:#fff
+    style C fill:#ffeaa7
+    style H fill:#55efc4
+    style X fill:#f0f0f0,stroke:#999,stroke-dasharray: 5 5,color:#999
+            </div>
+            <div class="key-point">
+                <strong>Prerequisite:</strong> Blueprint must be a Helm chart first. If it's still docker-compose, the skill tells the user to run <code>/bp-convert-to-rhoai</code> first.
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>bp-add-nim-serving | RHOAI Blueprint Skill Kit | Powered by Claude AI</p>
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'default',
+            themeVariables: {
+                primaryColor: '#667eea',
+                primaryTextColor: '#fff',
+                primaryBorderColor: '#764ba2',
+                lineColor: '#764ba2',
+                secondaryColor: '#ffeaa7',
+                tertiaryColor: '#f5f7fa',
+                fontSize: '18px'
+            }
+        });
+    </script>
+</body>
+</html>
