@@ -41,6 +41,7 @@ Concern areas to check during NIM resource generation — reasoning prompts, not
   - Internal: `http://<isvc-name>-predictor.<namespace>.svc.cluster.local:<service-port>`
 - **Port is required.** KServe creates a headless service (`ClusterIP: None`) for the predictor — port remapping doesn't work. The client must connect on the container port (default 8000), not the service port (80). Make the port configurable via `service.port` in values.
 - Is namespace parameterized (not hardcoded)?
+- **Namespace convention**: Does the NIM serving endpoint branch use the same namespace pattern as existing branches? Charts may use a helper (e.g., `{{ include "chartname.namespace" . }}`) instead of `{{ .Release.Namespace }}`. Check `_helpers.tpl` and existing URL branches — use whatever pattern the chart already uses.
 
 ### 7. Conditional Deployment
 - Are NIM serving resources wrapped in `{{- if .Values.nimServing.<model>.enabled }}`?

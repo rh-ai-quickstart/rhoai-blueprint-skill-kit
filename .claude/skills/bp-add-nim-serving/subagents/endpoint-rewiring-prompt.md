@@ -47,22 +47,26 @@ Common patterns to find:
 
 ### 2. Determine Replacement URLs
 
+**First, detect the chart's namespace pattern.** Search existing templates for how namespace is referenced — charts may use a helper (e.g., `{{ include "wosa.namespace" . }}`) instead of `{{ .Release.Namespace }}`. Check `templates/_helpers.tpl` and existing endpoint URLs in deployment templates. Use whatever pattern the chart already uses.
+
 For each NIM model, the InferenceService internal URL pattern is:
 ```
-http://<isvc-name>-predictor.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.nimServing.<model-key>.service.port }}
+http://<isvc-name>-predictor.{{ <namespace-pattern> }}.svc.cluster.local:{{ .Values.nimServing.<model-key>.service.port }}
 ```
+
+Where `<namespace-pattern>` matches the chart's existing convention (e.g., `include "chartname.namespace" .` or `.Release.Namespace`).
 
 **Port is required.** KServe creates a headless service (`ClusterIP: None`) for the predictor — port remapping (80→8000) does not work on headless services. The client must connect on the container port (default 8000) explicitly. Use the configurable `service.port` value.
 
 ### 3. Add NIM Serving Branch to Existing Conditionals
 
-Add `nimServing` as a **new branch** in existing endpoint conditionals. Do not modify or remove existing branches.
+Add `nimServing` as a **new branch** in existing endpoint conditionals. Do not modify or remove existing branches. Use the same namespace pattern as existing branches.
 
 #### In Helm templates (env vars)
 ```yaml
 - name: LLM_SERVER_URL
   {{- if .Values.nimServing.<model-key>.enabled }}
-  value: "http://{{ .Values.nimServing.<model-key>.service.name }}-predictor.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.nimServing.<model-key>.service.port }}"
+  value: "http://{{ .Values.nimServing.<model-key>.service.name }}-predictor.{{ <namespace-pattern> }}.svc.cluster.local:{{ .Values.nimServing.<model-key>.service.port }}"
   {{- else if .Values.nimOperator.<model-key>.enabled }}
   value: ...  # existing branch — leave as-is
   {{- else }}

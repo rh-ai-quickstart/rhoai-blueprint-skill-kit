@@ -133,8 +133,6 @@ The subagent searches the blueprint for env vars or config that reference NIM se
 
 ### Phase 5: Validation
 
-#### 5.1 Validation
-
 Delegate to validation subagent (max 3 iterations):
 
 ```python
@@ -156,7 +154,19 @@ Read and follow instructions from:
 
 Fix errors and re-validate until clean or max 3 attempts.
 
-#### 5.2 Summary Report
+---
+
+### Phase 6: Documentation & Summary
+
+#### 6.1 Update Blueprint OpenShift Documentation
+
+Search the blueprint for OpenShift deployment docs (e.g., `openshift-deployment.md`). Add a **NIM Serving Alternative** section covering:
+- How to enable NIM serving (`--set nimServing.<model>.enabled=true`)
+- NGC secret prerequisites (either existing chart secrets or `--set ngcApiKey=nvapi-xxx`)
+- Storage class and GPU toleration customization
+- That NIM serving requires RHOAI with KServe (NIM Operator is NOT required for this path)
+
+#### 6.2 Print Summary
 
 Print summary including:
 - Models deployed (name, type, GPU, PVC)
@@ -176,10 +186,12 @@ Print summary including:
   oc get storageclass
 
   # Find GPU node taints
-  oc get nodes -l nvidia.com/gpu.present=true -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.taints}{"\n"}{end}'
+  oc get nodes -l nvidia.com/gpu.present=true \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.taints}{"\n"}{end}'
   ```
 
   Show how to override at install time via `--set` flags and mention the values.yaml paths for direct editing.
+- **Deploy command** — show a ready-to-copy `helm install` with all required `--set` flags: enable each NIM serving model (`--set nimServing.<model>.enabled=true`), disable corresponding NIM Operator model (`--set nimOperator.<model>.enabled=false`), NGC API key (only if the skill generated a fallback Secret template — `--set ngcApiKey=nvapi-xxx`).
 - **Before deploying** checklist:
   - GPU Operator installed with available GPU nodes
   - NGC secrets exist in namespace (either created by the blueprint's chart or via `--set ngcApiKey=nvapi-xxx` if the skill generated a fallback Secret template)

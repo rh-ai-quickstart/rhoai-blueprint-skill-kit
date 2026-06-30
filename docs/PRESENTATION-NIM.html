@@ -207,7 +207,7 @@
             <p class="subtitle">Automated NIM Model Deployment via RHOAI Native Integration</p>
             <div class="stats">
                 <div class="stat-box">
-                    <div class="stat-number">5</div>
+                    <div class="stat-number">6</div>
                     <div class="stat-label">Phases</div>
                 </div>
                 <div class="stat-box">
@@ -285,16 +285,23 @@ flowchart TD
     subgraph P5["Phase 5: Validation"]
         E1["validation subagent"] --> E2{"Errors?"}
         E2 -->|"Yes (retry max 3)"| E3["Fix errors"] --> E1
-        E2 -->|Clean| E4["Summary Report + Checklist"]
+        E2 -->|Clean| E4["Pass"]
     end
 
-    E4 --> Done(["Done: helm install ready"])
+    E4 --> P6
+
+    subgraph P6["Phase 6: Documentation & Summary"]
+        F1["Update OpenShift docs"] --> F2["Deploy command + checklist"]
+    end
+
+    F2 --> Done(["Done: helm install ready"])
 
     style P1 fill:#f0f4ff,stroke:#667eea,color:#333
     style P2 fill:#f0f4ff,stroke:#667eea,color:#333
     style P3 fill:#f0f4ff,stroke:#667eea,color:#333
     style P4 fill:#f0f4ff,stroke:#667eea,color:#333
     style P5 fill:#f0f4ff,stroke:#667eea,color:#333
+    style P6 fill:#f0f4ff,stroke:#667eea,color:#333
     style STOP fill:#ffe8e8,stroke:#d63031,color:#333
     style Done fill:#e8f8f5,stroke:#00b894,color:#333
             </div>
