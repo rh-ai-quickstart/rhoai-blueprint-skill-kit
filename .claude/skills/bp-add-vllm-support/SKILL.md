@@ -4,7 +4,7 @@ description: >-
   Use when the user asks to add vLLM support, replace NIM with vLLM, add
   open-source inference, or add KServe-based model serving to a blueprint
   that already has RHOAI/Helm support.
-argument-hint: <path-to-blueprint-directory>
+argument-hint: <path-to-blueprint-directory-or-git-url>
 allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, WebFetch, WebSearch, mcp__plugin_context7_context7__query-docs, mcp__plugin_context7_context7__resolve-library-id
 ---
 
@@ -20,12 +20,34 @@ You are adding vLLM as an alternative model-serving backend to an NVIDIA Bluepri
 
 **Skill base directory**: Use the path from the "Base directory for this skill" message to resolve relative file references below.
 
-## Inputs
+## Input
+
+User provides either a **local path** to a blueprint directory OR a **git URL** (HTTPS/SSH).
+
+## Workflow
+
+### Phase 0: Input Resolution
+
+Determine whether user input is a local path or a git URL. If it's a git URL, clone it to a well-known local directory.
 
 ```bash
-BLUEPRINT_DIR="${1:?}"          # required — path to the blueprint directory
+INPUT="<user-provided-input>"
+
+if echo "$INPUT" | grep -qE '^(https?://|git@|git://)'; then
+  REPO_NAME=$(basename "$INPUT" .git)
+  mkdir -p ~/rhoai-blueprints
+  git clone "$INPUT" ~/rhoai-blueprints/"$REPO_NAME"
+  blueprint_dir=~/rhoai-blueprints/"$REPO_NAME"
+else
+  blueprint_dir="$INPUT"
+fi
+
 HF_TOKEN_SECRET="hf-token"     # default secret name for HuggingFace token
 ```
+
+**Output**: `blueprint_dir` — local path used by all subsequent phases
+
+---
 
 ## Goal
 
@@ -45,8 +67,6 @@ For each inference model in the blueprint, determine if it can run on vLLM and, 
 2. **Not compatible** — Architecture not in vLLM's registry. Stays on current deployment. No toggle added.
 
 ---
-
-## Workflow
 
 ### Phase 1: Blueprint Analysis
 
@@ -130,10 +150,6 @@ The following are determined automatically. Both are configurable in `values.yam
 ---
 
 ### Phase 4: Generate vLLM Resources
-
-**Read `reasoning-guardrails.md` before continuing.**
-
-Load knowledge base: `knowledge-base/kserve-patterns.md`
 
 Delegate to `vllm-resource-generator` subagent:
 
@@ -245,23 +261,18 @@ Print summary including:
 
 ---
 
-## Guidelines
-
-- Do NOT hardcode tolerations — leave empty array `[]`, user fills per their cluster taints
-- HuggingFace 401/403 on gated model config.json is normal — mark `gated: true`, proceed
-
 ## Supporting Documents
 
 ### Main Agent Reads:
-- `reasoning-guardrails.md` — post-validation self-check for cross-cutting concerns — **read after Phase 6 validation passes**
-- `knowledge-base/vllm-compatibility.md` — architecture compatibility reference — **read during Phase 2 for any non-generation model**
-- `knowledge-base/kserve-patterns.md` — ServingRuntime + InferenceService + companion Service templates — **read during Phase 4 before generating templates**
+- `reasoning-guardrails.md`: Post-validation self-check for cross-cutting concerns — **Read at Phase 6 (after validation passes)**
 
 ### Subagent-Only Documents (DO NOT READ):
-- `subagents/blueprint-analyzer-prompt.md` — Phase 1: find inference models and extract details
-- `subagents/model-analyzer-prompt.md` — Phase 2: model compatibility + image selection
-- `subagents/vllm-resource-generator-prompt.md` — Phase 4: Helm template generation
-- `subagents/endpoint-rewiring-prompt.md` — Phase 5: endpoint rewiring + NetworkPolicy
-- `subagents/validation-prompt.md` — Phase 6: validation checks
+- `subagents/blueprint-analyzer-prompt.md`: Blueprint analysis instructions (Phase 1)
+- `subagents/model-analyzer-prompt.md`: Model compatibility analysis instructions (Phase 2)
+- `subagents/vllm-resource-generator-prompt.md`: Helm template generation instructions (Phase 4)
+- `subagents/endpoint-rewiring-prompt.md`: Endpoint rewiring + NetworkPolicy instructions (Phase 5)
+- `subagents/validation-prompt.md`: Post-implementation validation instructions (Phase 6)
 
-Read main agent documents only when needed during the appropriate phases. Never read subagent prompt files — they're passed to subagents via Agent tool prompt to keep main context clean.
+Read main agent documents at the appropriate phase boundaries as instructed above.
+
+**Note:** Never read subagent prompt files - they're passed to subagents via Agent tool prompt to keep main context clean.

@@ -68,6 +68,14 @@ If `values-openshift.yaml` exists, add the `vllm:` values section to it. Do NOT 
 
 **Resource sizing:** Extract CPU, memory, and GPU from the blueprint's existing model specs (NIM Operator values, docker-compose deploy.resources, pod specs). If the blueprint doesn't specify CPU/memory, default to: requests 8 CPU / 32Gi memory, limits 16 CPU / 64Gi memory.
 
+## Tools Available
+
+- **Read**: Read `knowledge-base/kserve-patterns.md`, existing blueprint templates, values files
+- **Write**: Create new template files (e.g., `templates/vllm-*.yaml`)
+- **Edit**: Modify existing blueprint files (values, secrets templates)
+- **Bash**: Helm template rendering, grep, ls
+- **WebFetch**: Fetch vLLM source files for version-specific flag discovery
+
 ## Key Rules
 
 - All vLLM toggles default to `enabled: false`

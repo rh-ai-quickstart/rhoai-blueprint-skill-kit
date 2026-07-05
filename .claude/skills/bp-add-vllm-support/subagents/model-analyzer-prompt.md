@@ -14,7 +14,11 @@ You receive:
 
 ## Steps
 
-### 1. Find HuggingFace ID and get architecture
+### 1. Read Compatibility Reference
+
+Read `knowledge-base/vllm-compatibility.md` (relative to the skill base directory) for the methodology on checking model compatibility and model-type flag discovery.
+
+### 2. Find HuggingFace ID and get architecture
 
 Do NOT derive the HuggingFace ID from the NIM image path — naming conventions differ between NIM and HuggingFace. Always search HuggingFace and verify the repo exists by fetching it.
 
@@ -29,7 +33,7 @@ Extract:
 
 Check if the model is gated (look for "Request access" or "gated" on the HuggingFace page).
 
-### 2. Fetch vLLM's ModelRegistry for the deployed version
+### 3. Fetch vLLM's ModelRegistry for the deployed version
 
 Fetch `registry.py` — the **only** source of truth. Do NOT use docs.vllm.ai, upstream `main`, or HuggingFace model cards — these reflect newer versions and produce false positives.
 
@@ -52,7 +56,7 @@ Extract the version from the tag and fetch from `vllm-project/vllm/v{version}/..
 - If the fetch fails (404, timeout, empty): verdict MUST be UNKNOWN, never COMPATIBLE.
 - After fetching, search the file content for the architecture string. Report the exact dict name where you found it (e.g., `_TEXT_GENERATION_MODELS`, `_EMBEDDING_MODELS`). If you cannot quote the exact line, you did not actually read the file.
 
-### 3. Check compatibility
+### 4. Check compatibility
 
 Search the **entire** `registry.py` for each model's architecture string as a dict key. Do NOT hardcode dict names — the set of dicts varies across versions.
 
@@ -60,12 +64,12 @@ Search the **entire** `registry.py` for each model's architecture string as a di
 - **Not found** → **INCOMPATIBLE**
 - **Fetch failed** → **UNKNOWN**
 
-### 4. Determine image source
+### 5. Determine image source
 
 - **Compatible** → `imageSource: "vllm-hf"` (vLLM downloads from HuggingFace; HF token needed only for gated models)
 - **Incompatible/unknown** → `imageSource: "none"`
 
-### 5. Detect existing HF token secrets
+### 6. Detect existing HF token secrets
 
 Search the blueprint's Helm templates and values for an existing HuggingFace token secret. Report the secret name if found.
 
