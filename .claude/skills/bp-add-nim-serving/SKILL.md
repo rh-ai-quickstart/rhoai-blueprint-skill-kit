@@ -1,7 +1,7 @@
 ---
 name: bp-add-nim-serving
 description: Use when a blueprint contains NIM models that need to be deployed via RHOAI NIM serving
-argument-hint: <path-to-blueprint-directory>
+argument-hint: <path-to-blueprint-directory-or-git-url>
 allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion
 ---
 
@@ -17,9 +17,30 @@ You are deploying NVIDIA NIM models found in a blueprint using RHOAI's native NI
 
 ## Input
 
-User provides a **local path** to an NVIDIA Blueprint directory that contains NIM model references — either local NIM containers (`nvcr.io/nim/*` images in docker-compose, Helm values, or templates) or NVIDIA API calls (`integrate.api.nvidia.com` endpoints).
+User provides either a **local path** to a blueprint directory OR a **git URL** (HTTPS/SSH).
 
 ## Workflow
+
+### Phase 0: Input Resolution
+
+Determine whether user input is a local path or a git URL. If it's a git URL, clone it to a well-known local directory.
+
+```bash
+INPUT="<user-provided-input>"
+
+if echo "$INPUT" | grep -qE '^(https?://|git@|git://)'; then
+  REPO_NAME=$(basename "$INPUT" .git)
+  mkdir -p ~/rhoai-blueprints
+  git clone "$INPUT" ~/rhoai-blueprints/"$REPO_NAME"
+  blueprint_dir=~/rhoai-blueprints/"$REPO_NAME"
+else
+  blueprint_dir="$INPUT"
+fi
+```
+
+**Output**: `blueprint_dir` — local path used by all subsequent phases
+
+---
 
 ### Phase 1: NIM Model Discovery
 
@@ -78,10 +99,6 @@ The following are determined automatically from the blueprint. If not found, sen
 
 ### Phase 3: NIM Resource Generation
 
-**Read `reasoning-guardrails.md` before continuing.**
-
-Load knowledge base: `nim-serving-patterns.md`, `nim-prerequisites.md`
-
 Delegate to `nim-resource-generator` subagent:
 
 ```python
@@ -97,7 +114,6 @@ Read and follow instructions from:
 - Models: {nim_models}
 - User decisions: {user_decisions}
 - Existing secrets: {existing_secrets}
-- Knowledge base dir: .claude/skills/bp-add-nim-serving/knowledge-base/
 """,
 )
 ```
@@ -154,6 +170,8 @@ Read and follow instructions from:
 
 Fix errors and re-validate until clean or max 3 attempts.
 
+After validation passes, **read `reasoning-guardrails.md`** and run the self-check checklist against the generated files and validation report. Fix any issues found before proceeding.
+
 ---
 
 ### Phase 6: Documentation & Summary
@@ -202,12 +220,14 @@ Print summary including:
 ## Supporting Documents
 
 ### Main Agent Reads:
-- `reasoning-guardrails.md`: NIM-specific concern areas — **Read at Phase 3**
-- `knowledge-base/nim-serving-patterns.md`: Verified ServingRuntime + InferenceService YAML
-- `knowledge-base/nim-prerequisites.md`: Secrets, SCC, storage, env vars
+- `reasoning-guardrails.md`: Post-validation self-check for NIM-specific concerns — **Read at Phase 5 (after validation passes)**
 
 ### Subagent-Only Documents (DO NOT READ):
-- `subagents/nim-model-analyzer-prompt.md`
-- `subagents/nim-resource-generator-prompt.md`
-- `subagents/endpoint-rewiring-prompt.md`
-- `subagents/validation-prompt.md`
+- `subagents/nim-model-analyzer-prompt.md`: NIM model discovery instructions (Phase 1)
+- `subagents/nim-resource-generator-prompt.md`: Resource generation instructions (Phase 3)
+- `subagents/endpoint-rewiring-prompt.md`: Endpoint rewiring instructions (Phase 4)
+- `subagents/validation-prompt.md`: Post-implementation validation instructions (Phase 5)
+
+Read main agent documents at the appropriate phase boundaries as instructed above.
+
+**Note:** Never read subagent prompt files or knowledge-base files - they're passed to subagents via Agent tool prompt to keep main context clean.
