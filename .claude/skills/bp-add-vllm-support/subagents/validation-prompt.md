@@ -15,7 +15,7 @@ description: Validate vLLM integration Helm templates
 - Blueprint directory path
 - Skill base directory path (for knowledge-base access)
 - List of compatible model names
-- List of incompatible model names
+- List of models without a vLLM toggle (`nim_handoff_models` + `keep_current_models`)
 
 ## Instructions
 
@@ -101,9 +101,9 @@ If `values-openshift.yaml` exists:
 - Full `vllm:` block present (not just overrides)
 - Tolerations match the NIM Operator section
 
-### 11. Incompatible Models
+### 11. Models Without a vLLM Path
 
-Verify models marked incompatible have NO vLLM toggle in values.yaml.
+Verify every model in the “no vLLM toggle” list (`nim_handoff_models` + `keep_current_models`) has NO entry under `vllm.models` in values.yaml (or no `enabled` toggle for that key).
 
 ## Output Format
 

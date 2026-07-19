@@ -5,7 +5,7 @@ description: >-
   open-source inference, or add KServe-based model serving to a blueprint
   that already has RHOAI/Helm support.
 argument-hint: <path-to-blueprint-directory-or-git-url>
-allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, WebFetch, WebSearch, mcp__plugin_context7_context7__query-docs, mcp__plugin_context7_context7__resolve-library-id
+allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, Skill, WebFetch, WebSearch, mcp__plugin_context7_context7__query-docs, mcp__plugin_context7_context7__resolve-library-id
 ---
 
 # Add vLLM Support to NVIDIA Blueprint
@@ -64,7 +64,9 @@ For each inference model in the blueprint, determine if it can run on vLLM and, 
 ### Per-Model Outcomes
 
 1. **Compatible** → Add vLLM + HuggingFace download path. Works for any model whose architecture is in vLLM's registry, regardless of original image source. Gated models need an HF token; non-gated models download without authentication.
-2. **Not compatible** — Architecture not in vLLM's registry. Stays on current deployment. No toggle added.
+2. **Not compatible / unknown** → Architecture not in vLLM's registry, or registry could not be verified. Ask the user:
+   - **A)** Deploy original via NIM serving → record for handoff; no vLLM toggle. After this skill finishes, invoke `/bp-add-nim-serving` via the Skill tool (see Phase 7.3).
+   - **B)** Keep current deployment → no toggle (legacy behavior).
 
 ---
 
@@ -113,9 +115,9 @@ vLLM image: {vllm_image}:{vllm_tag}
 )
 ```
 
-**Output**: Per-model verdict (COMPATIBLE/INCOMPATIBLE/UNKNOWN), modelType, image source, gated flag. Display the compatibility matrix to the user, then proceed with **only COMPATIBLE models**. INCOMPATIBLE and UNKNOWN models get no toggle, no template — they stay on their current deployment.
+**Output**: Per-model verdict (COMPATIBLE/INCOMPATIBLE/UNKNOWN), modelType, image source, gated flag. Display the compatibility matrix to the user.
 
-**Done when:** Every model has a verdict. Compatibility matrix shown to user. If 0 compatible models, print summary and stop — no templates to generate.
+**Done when:** Every model has a verdict. Compatibility matrix shown to user. If INCOMPATIBLE/UNKNOWN models exist, continue to Phase 3.1 for fallback decisions.
 
 ---
 
@@ -123,19 +125,37 @@ vLLM image: {vllm_image}:{vllm_tag}
 
 **Use AskUserQuestion tool** for critical decisions before generating resources:
 
-#### 3.1 Confirm Models and Resources
+#### 3.1 Fallback choice (per INCOMPATIBLE / UNKNOWN model)
+
+Skip if all models are COMPATIBLE.
+
+For **each** INCOMPATIBLE/UNKNOWN model, ask **one** `AskUserQuestion` with exactly two options:
+
+1. `Deploy original via NIM serving (/bp-add-nim-serving)` — RHOAI NIM serving (ServingRuntime + InferenceService), **not** the existing NIM Operator / current path. Include even if NIM Operator is already present.
+2. `Keep current deployment (no vLLM)` — no change, no toggle added.
+
+Record each answer into:
+- `nim_handoff_models` — user wants `/bp-add-nim-serving` (no vLLM toggle)
+- `keep_current_models` — stay on current deployment (no vLLM toggle)
+
+#### 3.2 Confirm Models and Resources
+
+`compatible_models` = original COMPATIBLE models only.
+
+If `compatible_models` is empty: skip Phases 4–6 and 7.1, print the Phase 7.2 summary (no deploy command), then run Phase 7.3 if `nim_handoff_models` is non-empty. Stop after that — no vLLM templates to generate.
 
 ```
-"Found {count} vLLM-compatible model(s) in this blueprint:
+"Found {count} model(s) to add as vLLM paths:
 
-{for each compatible model:}
+{for each model in compatible_models:}
 - {display_name}
   HuggingFace ID: {model_id}
   Model type: {model_type} (e.g., generate, embed)
   GPU: {gpu_count} x nvidia.com/gpu
   Gated: {yes/no}
 
-Incompatible models (staying on current deployment): {list or 'none'}
+Models for NIM serving handoff: {nim_handoff_models or 'none'}
+Models keeping current deployment: {keep_current_models or 'none'}
 
 Confirm these models and resource allocations? (or specify changes)"
 ```
@@ -151,7 +171,7 @@ The following are determined automatically. Both are configurable in `values.yam
 
 ### Phase 4: Generate vLLM Resources
 
-Delegate to `vllm-resource-generator` subagent:
+Delegate to `vllm-resource-generator` subagent with `compatible_models` from Phase 3. Do **not** generate vLLM resources for `nim_handoff_models` or `keep_current_models`.
 
 ```python
 vllm_resources = Agent(
@@ -175,7 +195,7 @@ Apply the generated resources:
 2. Write `templates/vllm-<model>.yaml` for each model (InferenceService + companion Service)
 3. Add `vllm:` section to `values.yaml`
 
-**Done when:** Every COMPATIBLE model has a ServingRuntime reference, InferenceService, and companion Service template written. `values.yaml` updated with `vllm:` block.
+**Done when:** Every model in `compatible_models` has a ServingRuntime reference, InferenceService, and companion Service template written. `values.yaml` updated with `vllm:` block.
 
 ---
 
@@ -218,7 +238,7 @@ Read and follow instructions from:
 - Skill base directory: {skill_base_dir}
 - Blueprint directory: {blueprint_dir}
 - Compatible models: {compatible_models}
-- Incompatible models: {incompatible_models}
+- Models without vLLM toggle: {nim_handoff_models + keep_current_models}
 - Files created: {files_created}
 - Files modified: {files_modified}
 """
@@ -242,22 +262,64 @@ Search the blueprint for OpenShift deployment docs (e.g., `openshift-deployment.
 #### 7.2 Print Summary
 
 Print summary including:
-- Models analyzed (compatible count, incompatible count)
+- Models analyzed (compatible count, incompatible/unknown count)
+- Models keeping current deployment, if any
 - Files created and modified
 - Endpoints rewired
 - Validation status
+- **NIM serving handoff (announce)** — if `nim_handoff_models` is non-empty, list the models that will be handled next:
+  ```
+  Next: invoking /bp-add-nim-serving for:
+  - {model_name} ({original image / HF id})
+  ```
 - **GPU tolerations** — default to `[]` (empty). Include command to discover correct values:
   ```bash
   oc get nodes -l nvidia.com/gpu.present=true \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.taints}{"\n"}{end}'
   ```
-- **Deploy command** — show a ready-to-copy `helm install` with all required `--set` flags: enable each vLLM model, disable corresponding NIM model (`--set nimOperator.<model>.enabled=false`), HF token (only if gated models exist), and API key placeholder (only if the blueprint's secrets template requires a non-empty value — trace the fallback chain to find the root key).
-- **Before deploying** checklist:
+- **Deploy command** — show a ready-to-copy `helm install` with all required `--set` flags: enable each vLLM model, disable corresponding NIM model (`--set nimOperator.<model>.enabled=false`), HF token (only if gated models exist), and API key placeholder (only if the blueprint's secrets template requires a non-empty value — trace the fallback chain to find the root key). Skip deploy-command details when no vLLM resources were generated.
+- **Before deploying** checklist (only when vLLM resources were generated):
   - **Only if gated models:** HF token secret exists in the deployment namespace (pass via `--set vllm.huggingFaceToken=hf_xxx`)
   - GPU tolerations match your cluster
   - NIM Operator / NIM serving disabled for models served via vLLM
 
-**Done when:** Docs updated and summary printed with deploy command.
+#### 7.3 NIM serving handoff (when requested)
+
+If `nim_handoff_models` is **empty**: vLLM skill is done after 7.2.
+
+If `nim_handoff_models` is **non-empty**: after the summary, **ask the user** via `AskUserQuestion`:
+
+```
+"The following models are incompatible with vLLM and were marked for NIM serving:
+- {model_name} ({image or HF id})
+
+Want me to run /bp-add-nim-serving now for these models?"
+Options: "Yes, run it now" | "No, I'll run it later"
+```
+
+**If yes**: invoke `/bp-add-nim-serving` via the **Skill tool** with a soft handoff note:
+
+```
+Skill tool → bp-add-nim-serving
+Arguments:
+  {blueprint_dir}
+
+  Handoff from bp-add-vllm-support (soft preference — NIM skill still rediscovers and confirms):
+  - Prefer NIM serving for: {nim_handoff_models as name + image/HF id}
+  - Already adding vLLM path (do not require NIM unless user asks): {compatible_models or 'none'}
+  - Keeping current deployment (no NIM serving unless user asks): {keep_current_models or 'none'}
+```
+
+**If no**: print the command the user can run later:
+```
+/bp-add-nim-serving {blueprint_dir}
+```
+
+**Rules:**
+- Invoke only after this skill's own work is finished (summary printed; Phases 4–6 skipped or completed).
+- Do **not** call NIM subagents, copy NIM prompts, or hard-filter NIM discovery from this skill — `bp-add-nim-serving` runs its full standalone flow (discovery, user confirmation, generation, validation). The handoff note only biases confirmation defaults.
+
+**Done when:** Docs updated (if vLLM resources exist), summary printed, and — when `nim_handoff_models` is non-empty — user has been asked and either `/bp-add-nim-serving` was invoked or the command was printed.
 
 ---
 
