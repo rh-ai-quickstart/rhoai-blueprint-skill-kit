@@ -45,14 +45,19 @@ Cross-cutting concerns to verify after validation completes, before proceeding t
 - Is `--tensor-parallel-size` using positional `index` syntax (`{{ index $model.resources.limits "nvidia.com/gpu" | quote }}`), NOT pipe syntax (`$model.resources.limits | index "nvidia.com/gpu"`)? Pipe syntax produces wrong output silently.
 
 ### 8. Completeness
-- Does every compatible model have all three resources generated (ServingRuntime ref, InferenceService, companion Service)?
-- Does every incompatible/unknown model have NO vLLM toggle in values?
-- Were ALL model endpoint references found during rewiring? Check env vars, config files, and Helm values — missed references mean some code paths still point at the old service when vLLM is enabled.
+- Does every model in `compatible_models` have all three resources generated (ServingRuntime ref, InferenceService, companion Service)?
+- Do models in `nim_handoff_models` and `keep_current_models` have NO vLLM toggle in values? Do not generate vLLM for NIM-handoff models “just in case.”
+- Were ALL model endpoint references found during rewiring for models that received a vLLM path? Check env vars, config files, and Helm values — missed references mean some code paths still point at the old service when vLLM is enabled.
 - For template-level field correctness (model args, tensor-parallel-size, env vars, port mapping), defer to kserve-patterns.md — the validation subagent checks those mechanically.
+
+### 9. Incompatible-Model Fallback
+- For each INCOMPATIBLE/UNKNOWN model, did Phase 3.1 `AskUserQuestion` include **both** options: `Deploy original via NIM serving (/bp-add-nim-serving)` **and** `Keep current deployment (no vLLM)`? Neither may be omitted.
+- If the user chose NIM handoff, was the user asked whether to run `/bp-add-nim-serving` now (Phase 7.3)? If yes: invoked via Skill tool with soft handoff note. If no: command printed for later use.
+- Was NIM left to run its own full flow (no calling NIM subagents from this skill)?
 
 ## Self-Check Checklist
 
-Before proceeding to Phase 6:
+Before proceeding to Phase 7:
 - [ ] Version-specific compatibility verified (not upstream main, not docs.vllm.ai)
 - [ ] Model-type flags discovered at runtime, not hardcoded
 - [ ] Companion Service selectors match InferenceService names exactly
@@ -60,5 +65,8 @@ Before proceeding to Phase 6:
 - [ ] HF token placed in existing secrets template if one exists; no Helm `lookup`
 - [ ] Has `--download-dir /vllm/model` in InferenceService args, no `storageUri`
 - [ ] `--tensor-parallel-size` uses positional `index` syntax (not pipe)
-- [ ] Every compatible model has all three resources; no incompatible model has a toggle
+- [ ] Every model in `compatible_models` has all three resources; NIM-handoff and keep-current models have no toggle
+- [ ] Phase 3.1 always offered NIM serving handoff + keep-current (not dropped)
+- [ ] NIM handoff announced in summary when user chose that path
+- [ ] Phase 7.3 asked whether to run `/bp-add-nim-serving` now when `nim_handoff_models` non-empty; Skill invoke only on yes, else command printed
 - [ ] No blocking errors remain from validation report

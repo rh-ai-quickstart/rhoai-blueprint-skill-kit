@@ -249,19 +249,19 @@
         <!-- Slide 1: Title + Why -->
         <div class="slide">
             <h1>vLLM Integration Skill</h1>
-            <p class="subtitle">Replaces proprietary NIM containers with open-source vLLM inference using KServe on OpenShift AI</p>
+            <p class="subtitle">Adds open-source vLLM inference via KServe on OpenShift AI &mdash; with NIM serving fallback for incompatible models</p>
             <div class="stats">
                 <div class="stat-box">
-                    <div class="stat-number">7</div>
-                    <div class="stat-label">Phases</div>
+                    <div class="stat-number">8</div>
+                    <div class="stat-label">Phases (0&ndash;7)</div>
                 </div>
                 <div class="stat-box">
                     <div class="stat-number">5</div>
                     <div class="stat-label">Sub-Agents</div>
                 </div>
                 <div class="stat-box">
-                    <div class="stat-number">3</div>
-                    <div class="stat-label">Resources per Model</div>
+                    <div class="stat-number">2</div>
+                    <div class="stat-label">Skill Chain (vLLM &rarr; NIM)</div>
                 </div>
             </div>
             <div class="two-column">
@@ -281,6 +281,7 @@
                         <li><strong>Open-source</strong> - No NIM license needed</li>
                         <li><strong>RHOAI Native</strong> - KServe + ServingRuntime</li>
                         <li><strong>HuggingFace Models</strong> - Direct download</li>
+                        <li><strong>NIM Fallback</strong> - Incompatible models &rarr; NIM serving handoff</li>
                     </ul>
                     <p style="margin-top: 15px; color: #00b894; font-weight: bold;">Additive, disabled by default</p>
                 </div>
@@ -302,52 +303,60 @@ flowchart TD
         A2 -->|Yes| A3["Model list"]
     end
 
-    A2 -->|No| STOP["Stop"]
+    A2 -->|No| STOP["Stop: run /bp-convert-to-rhoai first"]
 
     A3 --> P2
 
     subgraph P2["2. Model Compatibility"]
         B0["Fetch HF config.json"] --> B1["Fetch vLLM registry.py"]
-        B1 --> B2{"Architecture supported?"}
-        B2 -->|Yes| B3["Compatible"]
-        B2 -->|No| B4["Skip"]
+        B1 --> B2{"Architecture in registry?"}
+        B2 -->|Yes| B3["COMPATIBLE"]
+        B2 -->|No| B4["INCOMPATIBLE"]
     end
 
-    B3 --> P3
+    B3 --> C1
+    B4 --> C2
 
     subgraph P3["3. User Decisions"]
-        C1["Present models + resources"] --> C2{"Confirm?"}
-        C2 -->|Adjust| C1
-        C2 -->|Yes| C3["Proceed"]
+        C1["3.1 Confirm compatible models"]
+        C2["3.2 Incompatible: NIM serving or keep current?"]
+        C2 -->|NIM serving| NIM_LIST["Deploy via NIM serving"]
+        C2 -->|Keep current| KEEP_LIST["Stay on current path"]
     end
-
-    C3 --> P4
 
     subgraph P4["4. Resource Generation"]
-        D1["Load patterns"] --> D2["Generate SR + ISVC + Service"]
+        D1["Load kserve-patterns.md"] --> D2["Generate SR + ISVC + Service"]
     end
+
+    C1 --> D1
 
     D2 --> P5
 
     subgraph P5["5. Endpoint Rewiring"]
-        E1["Scan endpoints"] --> E2["Add vLLM branch"]
+        E1["Scan endpoints"] --> E2["Add vLLM conditional branch"]
     end
 
     E2 --> P6
 
     subgraph P6["6. Validation"]
-        F1["Validate"] --> F2{"Errors?"}
-        F2 -->|Retry| F1
-        F2 -->|Clean| F3["Pass"]
+        F1["helm lint + template"] --> F2{"Errors?"}
+        F2 -->|Retry max 3| F1
+        F2 -->|Clean| F3["Self-check guardrails"]
     end
 
     F3 --> P7
 
-    subgraph P7["7. Summary"]
+    subgraph P7["7. Summary + NIM Handoff"]
         G1["Deploy command + docs"]
+        G1 --> G2{"Models need NIM?"}
+        G2 -->|Yes| G3["Ask: run /bp-add-nim-serving now?"]
+        G2 -->|No| Done2(["Done"])
+        G3 -->|Yes| NIM_SKILL(["/bp-add-nim-serving"])
+        G3 -->|No| G4["Print command for later"]
     end
 
-    G1 --> Done(["Done"])
+    NIM_SKILL --> Done3(["Done"])
+    G4 --> Done4(["Done"])
 
     style P1 fill:#f0f4ff,stroke:#667eea,color:#333
     style P2 fill:#f0f4ff,stroke:#667eea,color:#333
@@ -357,7 +366,12 @@ flowchart TD
     style P6 fill:#f0f4ff,stroke:#667eea,color:#333
     style P7 fill:#f0f4ff,stroke:#667eea,color:#333
     style STOP fill:#ffe8e8,stroke:#d63031,color:#333
-    style Done fill:#e8f8f5,stroke:#00b894,color:#333
+    style Done2 fill:#e8f8f5,stroke:#00b894,color:#333
+    style Done3 fill:#e8f8f5,stroke:#00b894,color:#333
+    style Done4 fill:#e8f8f5,stroke:#00b894,color:#333
+    style NIM_SKILL fill:#ff9f43,stroke:#e17055,color:#fff
+    style NIM_LIST fill:#ffeaa7,stroke:#fdcb6e,color:#333
+    style KEEP_LIST fill:#f0f0f0,stroke:#999,color:#333
             </div>
         </div>
 
@@ -406,6 +420,16 @@ flowchart TD
                     <p>Detects existing HF token secrets and references them. Only generates a fallback Secret when none exist.</p>
                 </div>
             </div>
+            <div class="two-column">
+                <div class="card">
+                    <h3>NIM Serving Handoff</h3>
+                    <p>Incompatible models don't dead-end. User chooses NIM serving or keep current. If NIM: skill asks, then invokes <code>/bp-add-nim-serving</code> via Skill tool with a soft preference note.</p>
+                </div>
+                <div class="card">
+                    <h3>Skill Chaining</h3>
+                    <p>Each skill owns its full flow. vLLM passes a soft handoff note via <code>$ARGUMENTS</code> &mdash; NIM still rediscovers and confirms, but biases toward the user's earlier choice.</p>
+                </div>
+            </div>
         </div>
 
         <!-- Slide 4: Pipeline Fit -->
@@ -418,22 +442,25 @@ flowchart TD
     A -->|Step 2| D["/bp-convert-to-rhoai"]
     C -->|Load Patterns| D
     D -->|Step 3| E["/bp-add-vllm-support"]
-    D -.->|"..."| X["Other serving skills"]
-    E --> F["Helm Chart with vLLM paths"]
-    X -.-> F
+    E -->|Compatible models| F["Helm Chart with vLLM paths"]
+    E -->|"Incompatible models (user chose NIM)"| N["/bp-add-nim-serving"]
+    N --> F
     F -->|Step 4| G["/bp-deploy-and-debug"]
     G --> H["Running on RHOAI"]
 
     style B fill:#667eea,color:#fff
     style D fill:#764ba2,color:#fff
     style E fill:#ff9f43,color:#fff
+    style N fill:#ff9f43,color:#fff
     style G fill:#00b894,color:#fff
     style C fill:#ffeaa7
     style H fill:#55efc4
-    style X fill:#f0f0f0,stroke:#999,stroke-dasharray: 5 5,color:#999
             </div>
             <div class="key-point">
                 <strong>Prerequisite:</strong> Blueprint must be a Helm chart first. If it's still docker-compose, the skill tells the user to run <code>/bp-convert-to-rhoai</code> first.
+            </div>
+            <div class="key-point">
+                <strong>Skill chain:</strong> When a model is incompatible with vLLM and the user chooses NIM serving, the vLLM skill asks whether to invoke <code>/bp-add-nim-serving</code>. Each skill runs its own full flow &mdash; no cross-skill subagent calls.
             </div>
         </div>
     </div>
