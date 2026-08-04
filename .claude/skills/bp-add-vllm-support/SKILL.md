@@ -64,7 +64,7 @@ For each inference model in the blueprint, determine if it can run on vLLM and, 
 ### Per-Model Outcomes
 
 1. **Compatible** → Add vLLM + HuggingFace download path. Works for any model whose architecture is in vLLM's registry, regardless of original image source. Gated models need an HF token; non-gated models download without authentication.
-2. **Not compatible** — Architecture not in vLLM's registry. Stays on current deployment. No toggle added.
+2. **Not compatible** → Architecture not in vLLM's registry. No vLLM toggle — stays on current deployment. After this skill finishes, print the `/bp-add-nim-serving` command so the user can add NIM serving for it if they want (see Phase 7.3).
 
 ---
 
@@ -135,7 +135,7 @@ vLLM image: {vllm_image}:{vllm_tag}
   GPU: {gpu_count} x nvidia.com/gpu
   Gated: {yes/no}
 
-Incompatible models (staying on current deployment): {list or 'none'}
+Incompatible models (staying on current deployment; NIM serving command provided at the end): {list or 'none'}
 
 Confirm these models and resource allocations? (or specify changes)"
 ```
@@ -251,13 +251,28 @@ Print summary including:
   oc get nodes -l nvidia.com/gpu.present=true \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.taints}{"\n"}{end}'
   ```
-- **Deploy command** — show a ready-to-copy `helm install` with all required `--set` flags: enable each vLLM model, disable corresponding NIM model (`--set nimOperator.<model>.enabled=false`), HF token (only if gated models exist), and API key placeholder (only if the blueprint's secrets template requires a non-empty value — trace the fallback chain to find the root key).
-- **Before deploying** checklist:
+- **Deploy command** — show a ready-to-copy `helm install` with all required `--set` flags: enable each vLLM model, disable corresponding NIM model (`--set nimOperator.<model>.enabled=false`), HF token (only if gated models exist), and API key placeholder (only if the blueprint's secrets template requires a non-empty value — trace the fallback chain to find the root key). Skip deploy-command details when no vLLM resources were generated.
+- **Before deploying** checklist (only when vLLM resources were generated):
   - **Only if gated models:** HF token secret exists in the deployment namespace (pass via `--set vllm.huggingFaceToken=hf_xxx`)
   - GPU tolerations match your cluster
   - NIM Operator / NIM serving disabled for models served via vLLM
 
-**Done when:** Docs updated and summary printed with deploy command.
+#### 7.3 NIM serving handoff
+
+If no models are INCOMPATIBLE/UNKNOWN: vLLM skill is done after 7.2.
+
+If any models are INCOMPATIBLE/UNKNOWN: after the summary, print:
+
+```
+The following models are incompatible with vLLM and stay on their current deployment:
+- {model_name} ({image or HF id})
+
+If you want NIM serving for any of them:
+
+/bp-add-nim-serving {blueprint_dir}
+```
+
+**Done when:** Docs updated (if vLLM resources exist), summary printed, and — when incompatible/unknown models exist — the `/bp-add-nim-serving` command has been printed.
 
 ---
 

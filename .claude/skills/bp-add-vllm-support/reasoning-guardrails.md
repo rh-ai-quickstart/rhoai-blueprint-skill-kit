@@ -50,9 +50,12 @@ Cross-cutting concerns to verify after validation completes, before proceeding t
 - Were ALL model endpoint references found during rewiring? Check env vars, config files, and Helm values — missed references mean some code paths still point at the old service when vLLM is enabled.
 - For template-level field correctness (model args, tensor-parallel-size, env vars, port mapping), defer to kserve-patterns.md — the validation subagent checks those mechanically.
 
+### 9. NIM Serving Handoff
+- If any model is INCOMPATIBLE/UNKNOWN, was the `/bp-add-nim-serving {blueprint_dir}` command printed in the summary (Phase 7.3)?
+
 ## Self-Check Checklist
 
-Before proceeding to Phase 6:
+Before proceeding to Phase 7:
 - [ ] Version-specific compatibility verified (not upstream main, not docs.vllm.ai)
 - [ ] Model-type flags discovered at runtime, not hardcoded
 - [ ] Companion Service selectors match InferenceService names exactly
@@ -61,4 +64,5 @@ Before proceeding to Phase 6:
 - [ ] Has `--download-dir /vllm/model` in InferenceService args, no `storageUri`
 - [ ] `--tensor-parallel-size` uses positional `index` syntax (not pipe)
 - [ ] Every compatible model has all three resources; no incompatible model has a toggle
+- [ ] Phase 7.3 printed the `/bp-add-nim-serving` command when incompatible/unknown models exist
 - [ ] No blocking errors remain from validation report

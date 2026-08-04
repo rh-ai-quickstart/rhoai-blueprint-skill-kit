@@ -249,7 +249,7 @@
         <!-- Slide 1: Title + Why -->
         <div class="slide">
             <h1>vLLM Integration Skill</h1>
-            <p class="subtitle">Replaces proprietary NIM containers with open-source vLLM inference using KServe on OpenShift AI</p>
+            <p class="subtitle">Adds open-source vLLM inference via KServe on OpenShift AI &mdash; prints NIM serving command for incompatible models</p>
             <div class="stats">
                 <div class="stat-box">
                     <div class="stat-number">7</div>
@@ -281,6 +281,7 @@
                         <li><strong>Open-source</strong> - No NIM license needed</li>
                         <li><strong>RHOAI Native</strong> - KServe + ServingRuntime</li>
                         <li><strong>HuggingFace Models</strong> - Direct download</li>
+                        <li><strong>NIM Fallback</strong> - Incompatible models &rarr; prints <code>/bp-add-nim-serving</code> command</li>
                     </ul>
                     <p style="margin-top: 15px; color: #00b894; font-weight: bold;">Additive, disabled by default</p>
                 </div>
@@ -310,7 +311,7 @@ flowchart TD
         B0["Fetch HF config.json"] --> B1["Fetch vLLM registry.py"]
         B1 --> B2{"Architecture supported?"}
         B2 -->|Yes| B3["Compatible"]
-        B2 -->|No| B4["Skip"]
+        B2 -->|No| B4["Incompatible<br/>print in summary"]
     end
 
     B3 --> P3
@@ -344,7 +345,7 @@ flowchart TD
     F3 --> P7
 
     subgraph P7["7. Summary"]
-        G1["Deploy command + docs"]
+        G1["Update docs + print summary<br/>with /bp-add-nim-serving command<br/>if incompatible models exist"]
     end
 
     G1 --> Done(["Done"])
@@ -406,6 +407,16 @@ flowchart TD
                     <p>Detects existing HF token secrets and references them. Only generates a fallback Secret when none exist.</p>
                 </div>
             </div>
+            <div class="two-column">
+                <div class="card">
+                    <h3>NIM Serving Handoff</h3>
+                    <p>Incompatible models don't dead-end. The summary prints <code>/bp-add-nim-serving {blueprint}</code> so the user can add NIM serving for those models.</p>
+                </div>
+                <div class="card">
+                    <h3>Each Skill Standalone</h3>
+                    <p>No cross-skill invocation. Each skill runs its own full discovery and flow. The vLLM skill just prints the command &mdash; the user decides when to run it.</p>
+                </div>
+            </div>
         </div>
 
         <!-- Slide 4: Pipeline Fit -->
@@ -418,19 +429,19 @@ flowchart TD
     A -->|Step 2| D["/bp-convert-to-rhoai"]
     C -->|Load Patterns| D
     D -->|Step 3| E["/bp-add-vllm-support"]
-    D -.->|"..."| X["Other serving skills"]
-    E --> F["Helm Chart with vLLM paths"]
-    X -.-> F
+    E -->|Compatible models| F["Helm Chart with vLLM paths"]
+    E -->|"Incompatible? prints command"| N["/bp-add-nim-serving"]
+    N --> F
     F -->|Step 4| G["/bp-deploy-and-debug"]
     G --> H["Running on RHOAI"]
 
     style B fill:#667eea,color:#fff
     style D fill:#764ba2,color:#fff
     style E fill:#ff9f43,color:#fff
+    style N fill:#ff9f43,color:#fff
     style G fill:#00b894,color:#fff
     style C fill:#ffeaa7
     style H fill:#55efc4
-    style X fill:#f0f0f0,stroke:#999,stroke-dasharray: 5 5,color:#999
             </div>
             <div class="key-point">
                 <strong>Prerequisite:</strong> Blueprint must be a Helm chart first. If it's still docker-compose, the skill tells the user to run <code>/bp-convert-to-rhoai</code> first.

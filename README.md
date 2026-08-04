@@ -1,13 +1,36 @@
-# NVIDIA Blueprint to RHOAI Converter
+# RHOAI Blueprint Skill Kit
 
-Claude Code skills for converting NVIDIA AI Blueprints to Red Hat OpenShift AI (RHOAI) compatible deployments.
+Claude Code skills for converting NVIDIA AI Blueprints to Red Hat OpenShift AI (RHOAI) compatible deployments — from extraction through model serving to cluster deployment.
 
 ## Overview
 
-This repository provides two complementary skills:
+This repository provides five skills that form an end-to-end pipeline:
 
-1. **Knowledge Extraction** (`bp-extract-blueprint-knowledge`) - Extract reusable patterns from completed RHOAI conversions
-2. **Blueprint Conversion** (`bp-convert-to-rhoai`) - Apply proven patterns to convert new blueprints to RHOAI
+1. **Knowledge Extraction** (`bp-extract-blueprint-knowledge`) — Extract reusable patterns from completed RHOAI conversions
+2. **Blueprint Conversion** (`bp-convert-to-rhoai`) — Apply proven patterns to convert new blueprints to RHOAI
+3. **vLLM Integration** (`bp-add-vllm-support`) — Add open-source vLLM model serving via KServe
+4. **NIM Serving** (`bp-add-nim-serving`) — Add RHOAI-native NIM serving via KServe (no NIM Operator needed)
+5. **Deploy & Debug** (`bp-deploy-and-debug`) — Deploy to OpenShift, debug failures, verify end-to-end
+
+## Skill Architectures
+
+### Complete Pipeline
+
+All five skills work together in a sequential pipeline. Each skill is standalone — run any subset depending on your needs.
+
+![Complete Pipeline](docs/images/architecture-combined.png)
+
+### vLLM Integration Skill
+
+Adds open-source vLLM model serving to blueprints. Compatible models get a toggleable vLLM path (KServe InferenceService + ServingRuntime). Incompatible models stay on their current deployment — the skill prints a command to invoke `/bp-add-nim-serving` for those models if the user wants NIM serving instead.
+
+![vLLM Skill Architecture](docs/images/architecture-vllm.png)
+
+### NIM Serving Skill
+
+Deploys NIM models via RHOAI's native KServe integration (ServingRuntime + InferenceService + PVC) — no NIM Operator CRDs required. Can be run standalone for any models that need NIM serving.
+
+![NIM Serving Skill Architecture](docs/images/architecture-nim.png)
 
 ## How It Works
 
@@ -156,25 +179,38 @@ Converts new NVIDIA Blueprints to RHOAI-compatible versions:
 ## Directory Structure
 
 ```
-claude-skill-for-nvidia-blueprint-to-helm/
-├── README.md (this file)
+rhoai-blueprint-skill-kit/
+├── README.md
+├── docs/
+│   ├── PRESENTATION.html                 # Overview presentation
+│   ├── PRESENTATION-VLLM.html            # vLLM skill presentation
+│   ├── PRESENTATION-NIM.html             # NIM skill presentation
+│   └── images/
+│       ├── architecture-combined.png     # Full pipeline diagram
+│       ├── architecture-vllm.png         # vLLM skill flow
+│       └── architecture-nim.png          # NIM skill flow
 ├── .claude/
 │   └── skills/
 │       ├── bp-extract-blueprint-knowledge/
-│       │   └── SKILL.md                    # Knowledge extraction skill
-│       └── bp-convert-to-rhoai/
-│           ├── SKILL.md                    # Blueprint conversion skill
-│           ├── reasoning-guardrails.md     # Concern areas to check
-│           ├── output-templates.md         # Output templates
-│           ├── subagent-validation-prompt.md  # Validation instructions
-│           └── knowledge-base/             # Extracted patterns
-│               ├── README.md               # Knowledge base guide
-│               ├── components/             # Component-specific patterns
-│               ├── architectures/          # Architecture patterns
-│               ├── deployment-types/       # Deployment method patterns
-│               ├── resource-patterns/      # Cross-cutting concerns
-│               └── integrations/           # Multi-component integrations
-└── tmp/                                    # Temporary working directory
+│       │   └── SKILL.md
+│       ├── bp-convert-to-rhoai/
+│       │   ├── SKILL.md
+│       │   ├── reasoning-guardrails.md
+│       │   ├── subagents/
+│       │   └── knowledge-base/
+│       ├── bp-add-vllm-support/
+│       │   ├── SKILL.md
+│       │   ├── reasoning-guardrails.md
+│       │   ├── subagents/                # 5 subagents
+│       │   └── knowledge-base/
+│       ├── bp-add-nim-serving/
+│       │   ├── SKILL.md
+│       │   ├── reasoning-guardrails.md
+│       │   ├── subagents/                # 4 subagents
+│       │   └── knowledge-base/
+│       └── bp-deploy-and-debug/
+│           ├── SKILL.md
+│           └── subagents/                # 7 subagents
 ```
 
 ## Knowledge Base Structure
@@ -513,5 +549,5 @@ Apache 2.0
 
 ---
 
-**Version**: 1.0  
-**Last Updated**: 2026-05-20
+**Version**: 2.0  
+**Last Updated**: 2026-07-30
